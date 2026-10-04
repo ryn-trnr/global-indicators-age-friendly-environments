@@ -39,7 +39,7 @@ network_analysis:
     # are still read if present.
     neighbourhood_distance: 1000
     # sausage buffer network size  -- in units specified above
-    accessibility_distance: 500
+    accessibility_distance: 400
     # distance within which to evaluate access
     soft_threshold_slope: 5
     # For scaling binary cutoffs using a smooth transition; this parameter adjusts slope k of the transition

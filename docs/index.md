@@ -52,7 +52,7 @@ The default core set of **spatial urban indicators** calculated includes:
 - Urban area in square kilometres
 - Population density (persons per square kilometre)
 - Street connectivity (intersections per square kilometre)
-- Access to destinations within 500 meters:
+- Access to destinations within 400 meters:
     - a supermarket
     - a convenience store
     - a public transport stop (any; or optionally, regularly serviced)

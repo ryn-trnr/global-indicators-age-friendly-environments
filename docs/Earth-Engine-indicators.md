@@ -62,7 +62,7 @@ This means a configuration with `gee: true` remains usable by collaborators who 
 
 Large public urban green space is identified from satellite imagery, and access to it is measured along the pedestrian network in the same way as for other destinations, producing:
 
-- `pct_access_500m_large_public_green_space_score` at the grid scale, and the corresponding population weighted city estimate `pop_pct_access_500m_large_public_green_space_score`
+- `pct_access_400m_large_public_green_space_score` at the grid scale, and the corresponding population weighted city estimate `pop_pct_access_400m_large_public_green_space_score`
 - a `large_public_urban_green_space` layer in the study region geopackage, which is used as a map overlay in the generated report
 
 ### Global Urban Heat Vulnerability Index

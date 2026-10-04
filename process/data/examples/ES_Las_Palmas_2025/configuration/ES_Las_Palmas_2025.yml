@@ -162,9 +162,9 @@ custom_aggregations:
 #   ## Optionally, a path to a point layer of custom sample point locations
 #   ## to be analysed in addition to those generated along the network.
 #   ## Points are associated with the nearest network edge within the snap
-#   ## tolerance distance in metres configured below (default: 500).
+#   ## tolerance distance in metres configured below (default: 400).
 #   custom_sample_points: path/to/points.geojson
-#   custom_sample_points_snap_tolerance: 500
+#   custom_sample_points_snap_tolerance: 400
 ###########
 ## Population metadata (raster or vector)
 population:

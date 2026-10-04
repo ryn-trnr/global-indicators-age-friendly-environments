@@ -265,7 +265,7 @@ def lpugs_analysis(r):
 
     1. Identify LPUGS overall greenery and store raster in PostgreSQL database
     2. Identify LPUGS availability as a subset of areas of open space and store in PostgreSQL database
-    3. Perform network analysis to determine LPUGS accessibility within 500m
+    3. Perform network analysis to determine LPUGS accessibility within 400m
     4. Overlap population grid with accessible network service area to determine service area and store in PostgreSQL database
     """
     print(

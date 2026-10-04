@@ -22,9 +22,9 @@ Destinations are grouped into categories, identified by a short name (`dest_name
 
 | `dest_name` | Indicator |
 |---|---|
-| `fresh_food_market` | Access to a supermarket or fresh food market within 500 m |
-| `convenience` | Access to a convenience store within 500 m |
-| `pt_any` | Access to a public transport stop within 500 m |
+| `fresh_food_market` | Access to a supermarket or fresh food market within 400 m |
+| `convenience` | Access to a convenience store within 400 m |
+| `pt_any` | Access to a public transport stop within 400 m |
 
 Data for any of these may be supplied under `points_of_interest`, keyed by the category name:
 
@@ -220,7 +220,7 @@ The `sampling` section changes this:
 sampling:
   sample_unpopulated_areas: true
   custom_sample_points: other_custom_data/my_addresses.geojson
-  custom_sample_points_snap_tolerance: 500
+  custom_sample_points_snap_tolerance: 400
 ```
 
 ### `sample_unpopulated_areas`
@@ -235,7 +235,7 @@ The path to a point layer of locations to be analysed in addition to those gener
 
 ### `custom_sample_points_snap_tolerance`
 
-The maximum distance in metres from the network within which a custom sample point will be associated with its nearest edge.  Defaults to 500.  Points further than this from any pedestrian network edge are not analysed.
+The maximum distance in metres from the network within which a custom sample point will be associated with its nearest edge.  Defaults to 400.  Points further than this from any pedestrian network edge are not analysed.
 
 ## See also
 

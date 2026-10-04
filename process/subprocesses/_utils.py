@@ -528,7 +528,7 @@ def generate_resources(
     else:
         r.access_profile(
             city_stats=city_stats,
-            title=phrases['Population % with access within 500m to...'],
+            title=phrases['Population % with access within 400m to...'],
             cmap=cmap,
             phrases=phrases,
             path=file,
@@ -831,14 +831,14 @@ def compile_spatial_map_info(
                 spatial_maps[i]['label']
             ].format(percent=city_summary_percent, **phrases)
             spatial_maps[i]['label'] = phrases[spatial_maps[i]['label']]
-    if gdf_city['pop_pct_access_500m_pt_gtfs_freq_20_score'][
+    if gdf_city['pop_pct_access_400m_pt_gtfs_freq_20_score'][
         0
     ] is None or pd.isna(
-        gdf_city['pop_pct_access_500m_pt_gtfs_freq_20_score'][0],
+        gdf_city['pop_pct_access_400m_pt_gtfs_freq_20_score'][0],
     ):
         city_summary_percent = _pct(
             fnum(
-                gdf_city['pop_pct_access_500m_pt_any_score'].fillna(0)[0],
+                gdf_city['pop_pct_access_400m_pt_any_score'].fillna(0)[0],
                 '0.0',
                 locale,
             ),
@@ -852,10 +852,10 @@ def compile_spatial_map_info(
             percent=city_summary_percent,
             **phrases,
         )
-        spatial_maps['pct_access_500m_pt_any_score'] = spatial_maps.pop(
-            'pct_access_500m_pt_gtfs_freq_20_score',
+        spatial_maps['pct_access_400m_pt_any_score'] = spatial_maps.pop(
+            'pct_access_400m_pt_gtfs_freq_20_score',
         )
-        spatial_maps['pct_access_500m_pt_any_score']['label'] = phrases[
+        spatial_maps['pct_access_400m_pt_any_score']['label'] = phrases[
             'Percentage of population with access to public transport'
         ]
     return spatial_maps
@@ -1537,7 +1537,7 @@ def ee_large_public_green_space_map(
 
     green_spaces = r.get_gdf('large_public_urban_green_space')
     accessibility = r.get_gdf(
-        f"SELECT pct_access_500m_large_public_green_space_score, geom FROM {r.config['grid_summary']}",
+        f"SELECT pct_access_400m_large_public_green_space_score, geom FROM {r.config['grid_summary']}",
     ).fillna('No Data')
     percentage = r.config['ee']['green_space_accessibility']['percent']
     pink_cmap = LinearSegmentedColormap.from_list(
@@ -1591,7 +1591,7 @@ def ee_large_public_green_space_map(
         ax.set_ylim(region_bounds[1] - y_buffer, region_bounds[3] + y_buffer)
     accessibility.plot(
         ax=ax,
-        column='pct_access_500m_large_public_green_space_score',
+        column='pct_access_400m_large_public_green_space_score',
         cmap=pink_cmap,
         vmin=0,
         vmax=100,
@@ -1637,7 +1637,7 @@ def ee_large_public_green_space_map(
         ],
     )
     cbar.set_label(
-        phrases['Access within 500m'],
+        phrases['Access within 400m'],
         size=textsize,
     )
     cbar.ax.tick_params(labelsize=textsize)
@@ -2977,9 +2977,9 @@ def _pdf_insert_transport_spatial_page(pdf, pages, phrases, r):
     else:
         return pdf
     results = r.config['pdf']['indicators_region']
-    regular_pt = results['pop_pct_access_500m_pt_gtfs_freq_20_score'][0]
+    regular_pt = results['pop_pct_access_400m_pt_gtfs_freq_20_score'][0]
     if regular_pt is None or pd.isna(
-        results['pop_pct_access_500m_pt_gtfs_freq_20_score'][0],
+        results['pop_pct_access_400m_pt_gtfs_freq_20_score'][0],
     ):
         pt_label = phrases[
             'Percentage of population with access to public transport'
@@ -2988,10 +2988,10 @@ def _pdf_insert_transport_spatial_page(pdf, pages, phrases, r):
         pt_label = phrases[
             'Percentage of population with access to public transport with service frequency of 20 minutes or less'
         ]
-    template['pct_access_500m_pt.jpg'] = (
-        f"{r.config['pdf']['figure_path']}/pct_access_500m_pt_{r.config['pdf']['language']}_no_label.jpg"
+    template['pct_access_400m_pt.jpg'] = (
+        f"{r.config['pdf']['figure_path']}/pct_access_400m_pt_{r.config['pdf']['language']}_no_label.jpg"
     )
-    template['pct_access_500m_pt_label'] = pt_label.replace(
+    template['pct_access_400m_pt_label'] = pt_label.replace(
         '\n',
         ' ',
     ).replace('  ', ' ')
@@ -3034,8 +3034,8 @@ def _pdf_insert_open_space_spatial_page(pdf, pages, phrases, r):
     else:
         return pdf
     pdf.add_page()
-    template['pct_access_500m_public_open_space_large_score'] = (
-        f"{r.config['pdf']['figure_path']}/pct_access_500m_public_open_space_large_score_{r.config['pdf']['language']}_no_label.jpg"
+    template['pct_access_400m_public_open_space_large_score'] = (
+        f"{r.config['pdf']['figure_path']}/pct_access_400m_public_open_space_large_score_{r.config['pdf']['language']}_no_label.jpg"
     )
     pos_label = (
         phrases[
@@ -3044,7 +3044,7 @@ def _pdf_insert_open_space_spatial_page(pdf, pages, phrases, r):
         .replace('\n', ' ')
         .replace('  ', ' ')
     )
-    template['pct_access_500m_public_open_space_large_score_label'] = pos_label
+    template['pct_access_400m_public_open_space_large_score_label'] = pos_label
     template.render()
     return pdf
 

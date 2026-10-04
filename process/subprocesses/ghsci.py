@@ -3426,19 +3426,19 @@ class Region:
                 'region'
             ].loc[
                 0,
-                'pop_pct_access_500m_fresh_food_market_score',
+                'pop_pct_access_400m_fresh_food_market_score',
             ],
             'Population with access to regularly running formal public transport (<20 mins)': spatial_indicators[
                 'region'
             ].loc[
                 0,
-                'pop_pct_access_500m_pt_gtfs_freq_20_score',
+                'pop_pct_access_400m_pt_gtfs_freq_20_score',
             ],
             'Population with access to any public open space': spatial_indicators[
                 'region'
             ].loc[
                 0,
-                'pop_pct_access_500m_public_open_space_any_score',
+                'pop_pct_access_400m_public_open_space_any_score',
             ],
             'Population living in neighbourhoods above minimum density threshold for WHO physical activity target': spatial_indicators[
                 'report'
@@ -3566,7 +3566,7 @@ class Region:
         if city_stats is None:
             city_stats = self.get_city_stats(phrases=phrases)
         if title is None:
-            title = phrases['Population % with access within 500m to...']
+            title = phrases['Population % with access within 400m to...']
         if cmap is None:
             from subprocesses.batlow import batlow_map as cmap
         if path is None:
@@ -3848,7 +3848,7 @@ def describe(variable: str) -> str:
     destinations, distances, or thresholds) are described without
     requiring a curated entry, and an unrecognised name resolves to a
     humanised form of itself.  For example:
-    ghsci.describe('pop_pct_access_500m_fresh_food_market_score')
+    ghsci.describe('pop_pct_access_400m_fresh_food_market_score')
     """
     import data_dictionary
 

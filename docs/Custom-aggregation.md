@@ -153,7 +153,7 @@ For each aggregation, a table `indicators_<name>` with:
 | indicator estimates | one column per indicator |
 | `geom` | the area geometry (clipped to the analysed area, unless `clip: false`) |
 
-Indicator columns are named for how they were calculated, not for which variable did the weighting.  A weighted estimate takes the region level variable name, for example `pop_pct_access_500m_fresh_food_market_score` and `pop_walkability`, exactly as reported in `indicators_region`.  An unweighted estimate takes the neighbourhood variable name, for example `pct_access_500m_fresh_food_market_score` and `local_walkability`, exactly as reported in the population grid summary.
+Indicator columns are named for how they were calculated, not for which variable did the weighting.  A weighted estimate takes the region level variable name, for example `pop_pct_access_400m_fresh_food_market_score` and `pop_walkability`, exactly as reported in `indicators_region`.  An unweighted estimate takes the neighbourhood variable name, for example `pct_access_400m_fresh_food_market_score` and `local_walkability`, exactly as reported in the population grid summary.
 
 Where a weight is applied, the unweighted neighbourhood estimates are reported alongside the weighted ones, so that the two remain distinguishable: a weighted aggregation carries both `pop_walkability` and `local_walkability`.
 
@@ -176,7 +176,7 @@ custom_aggregations:
     note: "Example of aggregating indicators for high school catchment districts within Las Palmas, using the intersection with the population grid and taking the population weighted average of indicators, apportioned by the share of each grid cell's area within the district."
 ```
 
-The output has one row per district, with columns including `codigo`, `denominaci`, `cod_postal`, `area_sqkm`, `pop_est`, `grid_count`, population weighted estimates such as `pop_pct_access_500m_convenience_score` and `pop_walkability`, and the corresponding unweighted estimates `pct_access_500m_convenience_score` and `local_walkability`.
+The output has one row per district, with columns including `codigo`, `denominaci`, `cod_postal`, `area_sqkm`, `pop_est`, `grid_count`, population weighted estimates such as `pop_pct_access_400m_convenience_score` and `pop_walkability`, and the corresponding unweighted estimates `pct_access_400m_convenience_score` and `local_walkability`.
 
 Because the catchment districts do not cover the whole urban study region, their apportioned populations sum to less than the region total — around 306,500 of the region's 331,400 in this example.  That is expected, and is a useful check that apportionment is behaving: without it, the sum would exceed the region total instead.
 
@@ -193,7 +193,7 @@ Also shipped with the example region:
     note: "Example of aggregating using buildings extracted from the configured OpenStreetMap data, taking the average of sample point estimates taken along the pedestrian network within 30m."
 ```
 
-Here the areas are the building footprints in the OpenStreetMap extract for the study region — around 21,000 of them appear in the output.  No weight is configured, so `pop_est` is null and the indicator estimates are plain averages of the sample points within 30 metres of each building: `pct_access_500m_convenience_score`, `local_walkability`, and so on.  Buildings with no sample point within 30 metres are dropped from the output, so the output has fewer rows than there are buildings in the data.
+Here the areas are the building footprints in the OpenStreetMap extract for the study region — around 21,000 of them appear in the output.  No weight is configured, so `pop_est` is null and the indicator estimates are plain averages of the sample points within 30 metres of each building: `pct_access_400m_convenience_score`, `local_walkability`, and so on.  Buildings with no sample point within 30 metres are dropped from the output, so the output has fewer rows than there are buildings in the data.
 
 ### 3. Chaining aggregations
 

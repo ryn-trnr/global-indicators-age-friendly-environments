@@ -346,7 +346,7 @@ def calculate_poi_accessibility(r, engine=None):
     #    per the region's routing_engine setting) to calculate distance from nodes
     #    to nearest destinations (daily living destinations, public open space)
     # 2. calculate accessibiity score per sample point: transform accessibility
-    #    distance to binary measure: 1 if access <= 500m, 0 otherwise
+    #    distance to binary measure: 1 if access <= 400m, 0 otherwise
     # 3. calculate daily living score by summing the accessibiity scores to all
     #    POIs (excluding pos)
     # 4. calculate walkability score per sample point: get zscores for daily
@@ -444,7 +444,7 @@ def calculate_poi_accessibility(r, engine=None):
     nodes_poi_dist = nodes_poi_dist[
         [x for x in nodes_poi_dist.columns if x.startswith('sp_nearest_node_')]
     ]
-    # replace -999 values (meaning no destination reached in less than 500 metres) as nan
+    # replace -999 values (meaning no destination reached in less than 400 metres) as nan
     nodes_poi_dist = (
         round(nodes_poi_dist, 0).replace(-999, np.nan).astype('Int64')
     )

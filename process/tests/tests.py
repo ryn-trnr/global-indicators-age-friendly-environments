@@ -879,7 +879,7 @@ class tests(unittest.TestCase):
         # the describers themselves are intact, so that restoring a
         # category is a matter of removing it from the exclusion set
         category, description = dd.describe_variable(
-            'pct_access_500m_fresh_food_market_score',
+            'pct_access_400m_fresh_food_market_score',
         )
         self.assertTrue(description)
         self.assertNotIn(category, dd.REFERENCE_EXCLUDED_CATEGORIES)
@@ -1009,7 +1009,7 @@ class tests(unittest.TestCase):
         import pandas as pd
 
         cases = [
-            ('pop_pct_access_500m_fresh_food_market_score', 62.4487, '62.4'),
+            ('pop_pct_access_400m_fresh_food_market_score', 62.4487, '62.4'),
             ('pop_est', 12345.678, '12,346'),
             ('intersection_count', 1234, '1,234'),
             ('pop_per_sqkm', 4523.24, '4,523'),

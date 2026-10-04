@@ -131,10 +131,10 @@ def calc_cities_pop_pct_indicators(r: ghsci.Region, indicators: dict) -> None:
     """Calculate population-weighted city-level indicators.
 
     These indicators include:
-        'pop_pct_access_500m_fresh_food_markets',
-        'pop_pct_access_500m_convenience',
-        'pop_pct_access_500m_pt_any',
-        'pop_pct_access_500m_public_open_space',
+        'pop_pct_access_400m_fresh_food_markets',
+        'pop_pct_access_400m_convenience',
+        'pop_pct_access_400m_pt_any',
+        'pop_pct_access_400m_public_open_space',
         'pop_nh_pop_density',
         'pop_nh_intersection_density',
         'pop_daily_living',

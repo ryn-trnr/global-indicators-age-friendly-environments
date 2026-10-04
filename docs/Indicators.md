@@ -124,7 +124,7 @@ Street intersection density within a 1km walkable neighbourhood
 
 ## Access to amenities and services
 
-### Access within 500 m to a range of amenities and services
+### Access within 400 m to a range of amenities and services
 A...
 - fresh food market or supermarket 
 - convenience store 
@@ -134,7 +134,7 @@ A...
 - public transport with average daytime weekday service frequency of 20 minutes or better 
 
 ### Access to daily living amenities score 
-Score of access to fresh food market, convenience and public transport within 500m using an active transport routable street network (/3)
+Score of access to fresh food market, convenience and public transport within 400m using an active transport routable street network (/3)
 
 ## Walkability
 ### Walkability index

@@ -1033,7 +1033,7 @@ def _describe_core_walking_access(variable):
     if match:
         return (
             'Score (0-1) for access within the configured walking '
-            'accessibility threshold distance (default 500 m) to '
+            'accessibility threshold distance (default 400 m) to '
             f'{destination_phrase(match.group(1))}'
         )
     match = re.fullmatch(
@@ -1337,11 +1337,11 @@ def _reference_parameter_sections():
                 'Distance threshold (m).  Distances can be customised '
                 'to locally policy-relevant values.  The core walking '
                 'access indicators use the configured neighbourhood '
-                'accessibility threshold (default 500 m).  Where a '
+                'accessibility threshold (default 400 m).  Where a '
                 'region configures the optional pedestrian accessibility '
                 'analysis, walking access is additionally evaluated at '
                 'each configured pedestrian distance, and cycling access '
-                'at each configured cycling distance (defaults: 500 m, '
+                'at each configured cycling distance (defaults: 400 m, '
                 '1000 m, 2000 m and 5000 m), so an access variable '
                 'exists for each distance.'
             ),
@@ -1372,7 +1372,7 @@ REFERENCE_PATTERNS = {
         (
             'sp_access_[destination]_score',
             'Score (0-1) for walking access within the configured '
-            'accessibility threshold distance (default 500 m) to the '
+            'accessibility threshold distance (default 400 m) to the '
             'destination',
             'sample point',
         ),
@@ -1397,7 +1397,7 @@ REFERENCE_PATTERNS = {
         # Optional configurable pedestrian analysis (region 'accessibility'
         # block): the same destinations measured at every configured
         # distance band, with distances censored at the largest band rather
-        # than at the 500 m accessibility threshold.
+        # than at the 400 m accessibility threshold.
         (
             'sp_walk_access_[destination]_[x]m',
             'Score (0/1): the destination is reachable within [x] m '

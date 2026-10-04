@@ -357,7 +357,7 @@ class TestLTRUnchanged(unittest.TestCase):
 
     ENGLISH_SAMPLES = (
         'Percentage of population with access to public transport',
-        'Population % with access within 500m to...',
+        'Population % with access within 400m to...',
         '25 city median (14.5)',
         'GOHSC 2026 - spatial indicators',
         'https://doi.org/10.25439/rmt.19586048',
@@ -381,7 +381,7 @@ class TestLTRUnchanged(unittest.TestCase):
     def test_english_rewrap_matches_legacy_radar_semantics(self):
         # the radar chart historically re-flowed manually line-broken
         # phrases with textwrap defaults (newlines treated as spaces)
-        text = '% of\npopulation\nwith access\nwithin 500m\nto:'
+        text = '% of\npopulation\nwith access\nwithin 400m\nto:'
         self.assertEqual(
             prepare_mpl_text(text, EN, wrap_width=13, rewrap=True),
             '\n'.join(textwrap_wrap(text, 13, break_long_words=False)),

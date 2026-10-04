@@ -157,7 +157,7 @@ def nearest_node_locations(codename):
             ORDER BY geom <-> c.geom
             LIMIT 1
         ) e
-        WHERE ST_Distance(e.geom, c.geom) <= {sampling.get('custom_sample_points_snap_tolerance', 500)};
+        WHERE ST_Distance(e.geom, c.geom) <= {sampling.get('custom_sample_points_snap_tolerance', 400)};
         """
     sql_queries[
         'Create new columns and indices for sampling point edge and node relations'

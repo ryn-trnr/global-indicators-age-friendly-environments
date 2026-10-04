@@ -173,7 +173,7 @@ def build_dest_node_lookup(
     r,
     active_layers,
     distance,
-    batch_size=500,
+    batch_size=400,
     n_workers=None,
     edge_table='edges',
     cost='length',
@@ -1054,7 +1054,7 @@ def process_distant_nodes(
 # Cumulative opportunities (binary)
 # 1 if d <= access_dist
 # 0 if d > access_dist
-def binary_access_score(df, distance_names, threshold=500):
+def binary_access_score(df, distance_names, threshold=400):
     """Calculate accessibiity score using binary measure.
 
     1 if access <= access_dist, 0 otherwise.
@@ -1066,7 +1066,7 @@ def binary_access_score(df, distance_names, threshold=500):
     distance_names: list
         list of original distance field names
     threshold: int
-        access distance threshold, default is 500 meters
+        access distance threshold, default is 400 meters
 
     Returns
     -------
@@ -1081,7 +1081,7 @@ def binary_access_score(df, distance_names, threshold=500):
 
 # Soft threshold access score
 # Higgs, C., Badland, H., Simons, K. et al. (2019) The Urban Liveability Index
-def soft_access_score(df, distance_names, threshold=500, k=5):
+def soft_access_score(df, distance_names, threshold=400, k=5):
     """Calculate accessibiity score using soft threshold approach.
 
     1 / (1+ e^(k *((dist-access_dist)/access_dist)))
@@ -1093,7 +1093,7 @@ def soft_access_score(df, distance_names, threshold=500, k=5):
     distance_names: list
         list of original distance field names
     threshold: int
-        access distance threshold, default is 500 meters
+        access distance threshold, default is 400 meters
     k: int
         the slope of decay, default is 5
 
@@ -1117,7 +1117,7 @@ def soft_access_score(df, distance_names, threshold=500, k=5):
 def cumulative_gaussian_access_score(
     df,
     distance_names,
-    threshold=500,
+    threshold=400,
     k=129842,
 ):
     """Calculate accessibiity score using Cumulative-Gaussian approach.

@@ -3196,7 +3196,7 @@ class Region:
                 for x in city_stats['comparisons'].keys()
             ]
         city_stats['access'].index = [
-            phrases[x] for x in city_stats['access'].index
+            phrases.get(x, x) for x in city_stats['access'].index
         ]
         return city_stats
 

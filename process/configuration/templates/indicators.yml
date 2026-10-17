@@ -5,6 +5,7 @@ nearest_node_analyses:
         - fresh_food_market
         - convenience
         - pt_any
+        - health_services
         category_field: dest_name
         filter_field: null
         filter_iterations: null
@@ -19,6 +20,7 @@ nearest_node_analyses:
         - fresh_food_market
         - convenience
         - pt_osm_any
+        - health_services
     Public open space:
         categories: []
         category_field: null
@@ -92,6 +94,7 @@ output:
         - sp_access_pt_gtfs_freq_30_score
         - sp_access_pt_gtfs_freq_20_score
         - sp_access_pt_any_score
+        - sp_access_health_services_score
         - sp_local_nh_avg_pop_density
         - sp_local_nh_avg_intersection_density
         - sp_daily_living_score
@@ -106,6 +109,7 @@ output:
         - pct_access_400m_pt_gtfs_freq_30_score
         - pct_access_400m_pt_gtfs_freq_20_score
         - pct_access_400m_pt_any_score
+        - pct_access_400m_health_services_score
         - local_nh_population_density
         - local_nh_intersection_density
         - local_daily_living
@@ -120,6 +124,7 @@ output:
         - pop_pct_access_400m_pt_gtfs_freq_30_score
         - pop_pct_access_400m_pt_gtfs_freq_20_score
         - pop_pct_access_400m_pt_any_score
+        - pop_pct_access_400m_health_services_score
         - pop_nh_pop_density
         - pop_nh_intersection_density
         - pop_daily_living
@@ -168,6 +173,8 @@ report:
                 p25: 38.71
                 p50: 56.71
                 p75: 76.16
+        pop_pct_access_400m_health_services_score:
+            title: Health services
     thresholds:
         "Mean 1000 m neighbourhood population per km\xB2":
             field: local_nh_population_density
@@ -206,6 +213,14 @@ report:
             outfile: 'pct_access_400m_public_open_space_large_score_{language}.jpg'
             range: [-0,100]
             tick_labels: ['{No}','{Yes}']
+        pct_access_400m_health_services_score:
+            label: Percentage of population with access to health services within 400 m
+            outfile: 'pct_access_400m_health_services_score_{language}.jpg'
+            range: [-0,100]
+            tick_labels: ['{No}','{Yes}']
+            overlay:
+                layer: destinations
+                where: "dest_name = 'health_services'"
     policy:
         analyses:
           - Presence

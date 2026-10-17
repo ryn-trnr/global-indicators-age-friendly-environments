@@ -497,7 +497,7 @@ def evaluate_threshold_pct(
     return percentage
 
 
-def generate_resources(
+def generate_resources(  # noqa: C901
     r,
     gdf_city,
     gdf_grid,
@@ -559,7 +559,22 @@ def generate_resources(
                     f"  {file.replace(config['region_dir'], '')} (exists; delete or rename to re-generate)",
                 )
             else:
-                overlay = r.get_gdf(spatial_maps[f].get('overlay', None))
+                overlay_setting = spatial_maps[f].get('overlay', None)
+                if isinstance(overlay_setting, dict):
+                    # An overlay may be configured as a mapping, e.g. to draw
+                    # only one dest_name from the shared destinations table:
+                    #   overlay: {layer: destinations,
+                    #             where: "dest_name = 'health_services'"}
+                    layer = overlay_setting.get('layer')
+                    where = overlay_setting.get('where')
+                    if layer and where:
+                        overlay = r.get_gdf(
+                            f'SELECT * FROM {layer} WHERE {where}',
+                        )
+                    else:
+                        overlay = None
+                else:
+                    overlay = r.get_gdf(overlay_setting)
                 overlay_colour = spatial_maps[f].get(
                     'overlay_colour',
                     '#8ECC3C',
@@ -827,10 +842,14 @@ def compile_spatial_map_info(
                 fnum(gdf_city[f'pop_{i}'].fillna(0)[0], '0.0', locale),
                 locale,
             )
-            phrases[spatial_maps[i]['label']] = phrases[
-                spatial_maps[i]['label']
-            ].format(percent=city_summary_percent, **phrases)
-            spatial_maps[i]['label'] = phrases[spatial_maps[i]['label']]
+            label_phrase = phrases.get(spatial_maps[i]['label'])
+            if label_phrase:
+                formatted_label = label_phrase.format(
+                    percent=city_summary_percent,
+                    **phrases,
+                )
+                phrases[spatial_maps[i]['label']] = formatted_label
+                spatial_maps[i]['label'] = formatted_label
     if gdf_city['pop_pct_access_400m_pt_gtfs_freq_20_score'][
         0
     ] is None or pd.isna(
@@ -3049,6 +3068,47 @@ def _pdf_insert_open_space_spatial_page(pdf, pages, phrases, r):
     return pdf
 
 
+def _pdf_insert_health_services_spatial_page(pdf, pages, phrases, r):
+    """Add and render the health services accessibility spatial page."""
+    report_template = r.config['pdf']['report_template']
+    if report_template not in ('spatial', 'spatial_ee'):
+        return pdf
+    health_figures = r.config['pdf']['indicators']['report'].get(
+        'spatial_distribution_figures',
+        {},
+    )
+    if 'pct_access_400m_health_services_score' not in health_figures:
+        print(
+            '  Health services spatial page skipped: health_services access '
+            'indicator is not configured in the indicator definitions.',
+        )
+        return pdf
+    if report_template == 'spatial':
+        # page 13 is reserved for the health services spatial page
+        template = FlexTemplate(pdf, elements=pages['13'])
+    else:
+        # EE pages are shifted up by one, freeing page 12 for health services
+        template = FlexTemplate(pdf, elements=pages['12'])
+    pdf.add_page()
+    template['pct_access_400m_health_services_score'] = (
+        f"{r.config['pdf']['figure_path']}/"
+        f"pct_access_400m_health_services_score_"
+        f"{r.config['pdf']['language']}_no_label.jpg"
+    )
+    health_label = health_figures[
+        'pct_access_400m_health_services_score'
+    ]['label']
+    template['pct_access_400m_health_services_score_label'] = health_label
+    template['health_header'] = 'Health services'
+    template['health_description'] = (
+        'Accessibility of the population to health services (hospitals, '
+        'clinics, doctors, dentists, pharmacies and allied health) within '
+        '400 m of the pedestrian network.'
+    )
+    template.render()
+    return pdf
+
+
 def _pdf_insert_nature_based_solutions(pdf, pages, phrases, r):
     """Add and render PDF report thresholds page."""
     if r.config['pdf']['report_template'] == 'policy':
@@ -3056,7 +3116,7 @@ def _pdf_insert_nature_based_solutions(pdf, pages, phrases, r):
     elif r.config['pdf']['report_template'].startswith('policy_spatial'):
         template = FlexTemplate(pdf, elements=pages['18'])
     elif r.config['pdf']['report_template'] == 'spatial_ee':
-        template = FlexTemplate(pdf, elements=pages['12'])
+        template = FlexTemplate(pdf, elements=pages['13'])
     else:
         return pdf
     # Set up last page.  The policy page is only rendered here for policy
@@ -3108,7 +3168,7 @@ def _pdf_insert_nature_based_solutions(pdf, pages, phrases, r):
     if r.config['pdf']['report_template'] == 'policy_spatial_ee':
         template = FlexTemplate(pdf, elements=pages['20'])
     elif r.config['pdf']['report_template'] == 'spatial_ee':
-        template = FlexTemplate(pdf, elements=pages['13'])
+        template = FlexTemplate(pdf, elements=pages['14'])
     pdf.add_page()
     template['green_space_accessibility'] = (
         f"{r.config['pdf']['figure_path']}/green_space_accessibility_{r.config['pdf']['locale']}_no_label.jpg"
@@ -3146,7 +3206,7 @@ def _pdf_insert_climate_change_risk_reduction(pdf, pages, phrases, r):
                 '  Earth Engine (EE) templates have been configured, but the EE-check has failed; skipping related pages.',
             )
             return pdf
-        template = FlexTemplate(pdf, elements=pages['14'])
+        template = FlexTemplate(pdf, elements=pages['15'])
     elif r.config['pdf']['report_template'] == 'policy_spatial_ee':
         if not r.config['gee']:
             print(
@@ -3198,7 +3258,7 @@ def _pdf_insert_climate_change_risk_reduction(pdf, pages, phrases, r):
     if r.config['pdf']['report_template'] == 'policy_spatial_ee':
         template = FlexTemplate(pdf, elements=pages['23'])
     elif r.config['pdf']['report_template'] == 'spatial_ee':
-        template = FlexTemplate(pdf, elements=pages['15'])
+        template = FlexTemplate(pdf, elements=pages['16'])
     pdf.add_page()
     template['global_urban_heat_vulnerability_index'] = (
         f"{r.config['pdf']['figure_path']}/global_urban_heat_vulnerability_index_{r.config['pdf']['locale']}_no_label.jpg"
@@ -3233,7 +3293,7 @@ def _pdf_insert_back_page(pdf, pages, phrases, r):
     elif r.config['pdf']['report_template'] == 'policy_spatial':
         template = FlexTemplate(pdf, elements=pages['20'])
     elif r.config['pdf']['report_template'] == 'spatial_ee':
-        template = FlexTemplate(pdf, elements=pages['16'])
+        template = FlexTemplate(pdf, elements=pages['17'])
     elif r.config['pdf']['report_template'] == 'policy_spatial_ee':
         template = FlexTemplate(pdf, elements=pages['24'])
     else:
@@ -3549,6 +3609,7 @@ def generate_pdf(
     pdf = _pdf_insert_transport_spatial_page(pdf, pages, phrases, r)
     pdf = _pdf_insert_open_space_policy_page(pdf, pages, phrases, r)
     pdf = _pdf_insert_open_space_spatial_page(pdf, pages, phrases, r)
+    pdf = _pdf_insert_health_services_spatial_page(pdf, pages, phrases, r)
     pdf = _pdf_insert_nature_based_solutions(pdf, pages, phrases, r)
     pdf = _pdf_insert_climate_change_risk_reduction(pdf, pages, phrases, r)
     pdf = _pdf_insert_back_page(pdf, pages, phrases, r)

@@ -15,6 +15,61 @@ from script_running_log import script_running_log
 from sqlalchemy import text
 
 
+def ensure_osm_dest_tag_columns(r):
+    """
+    Add OSM tag columns referenced by the destination definitions to the
+    imported OSM point and polygon tables, backfilled from the hstore 'tags'
+    column.
+
+    osm2pgsql only creates columns for its default tag set (amenity, shop,
+    building, name, public_transport, ...); any other tag key used by a
+    destination category (for example 'healthcare') lives only in the hstore
+    'tags' column, so a WHERE clause or jsonb expression referencing it as a
+    column fails with "column ... does not exist".  This step is idempotent
+    (ADD COLUMN IF NOT EXISTS) and safe for regions whose OSM data was
+    imported previously.
+    """
+    keys = sorted(
+        {
+            str(k).strip()
+            for k in ghsci.df_osm_dest['key'].dropna()
+            if str(k).strip()
+        },
+    )
+    if not keys:
+        return
+    for shape in ['point', 'polygon']:
+        table = f"{r.config['osm_prefix']}_{shape}"
+        with r.engine.begin() as connection:
+            existing = {
+                row[0]
+                for row in connection.execute(
+                    text(
+                        'SELECT column_name FROM information_schema.columns '
+                        f"WHERE table_schema = 'public' AND table_name = '{table}'",
+                    ),
+                )
+            }
+        missing = [k for k in keys if k not in existing]
+        if not missing:
+            continue
+        alter_sql = '\n'.join(
+            f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "{k}" varchar;'
+            for k in missing
+        )
+        backfill_sql = '\n'.join(
+            f"UPDATE {table} SET \"{k}\" = tags -> '{k}' WHERE tags ? '{k}';"
+            for k in missing
+        )
+        with r.engine.begin() as connection:
+            connection.execute(text(alter_sql))
+            connection.execute(text(backfill_sql))
+        print(
+            f'Added OSM tag columns {", ".join(missing)} to {table} '
+            '(backfilled from the tags hstore).',
+        )
+
+
 def compile_osm_destinations(r, skip_dest_names=None):
     """Import destinations from OpenStreetMap point and polygon layers.
 
@@ -27,6 +82,7 @@ def compile_osm_destinations(r, skip_dest_names=None):
         points_of_interest with replace: true).
     """
     skip = skip_dest_names or set()
+    ensure_osm_dest_tag_columns(r)
     df_osm_dest_unique = ghsci.df_osm_dest[
         ['dest_name', 'dest_full_name', 'domain']
     ].drop_duplicates(subset=['dest_name'])

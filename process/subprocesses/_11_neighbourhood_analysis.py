@@ -621,9 +621,9 @@ def neighbourhood_analysis(codename):
             from _earth_engine_indicators import earth_engine_analysis
 
             earth_engine_analysis(r)
-            destination_tables.append('lpugs_nodes_30m_line')
+            destination_tables.append('pugs_nodes_30m_line')
             # Refresh cached table list so tables created by the Earth Engine
-            # analysis (e.g. lpugs_nodes_30m_line) are recognised below on a
+            # analysis (e.g. pugs_nodes_30m_line) are recognised below on a
             # first analysis pass
             r.tables = r.get_tables()
         except Exception as e:

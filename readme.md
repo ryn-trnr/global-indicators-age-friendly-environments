@@ -144,7 +144,7 @@ To run the analysis for your study region visit our website for detailed instruc
 
 # Optional indicators using Google Earth Engine
 
-The two optional indicators of availability and access to large public urban green space, and the global urban heat vulnerability index are generated through use of Google Earth Engine - a cloud-based, planetary-scale, geospatial analysis platform that enables users to visualize and analyze satellite images. For more information, visit the Earth Engine [website](https://earthengine.google.com/) or read through the [academic paper](https://doi.org/10.1016/j.rse.2017.06.031) published in 2017.
+The two optional indicators of availability and access to public urban green space, and the global urban heat vulnerability index are generated through use of Google Earth Engine - a cloud-based, planetary-scale, geospatial analysis platform that enables users to visualize and analyze satellite images. For more information, visit the Earth Engine [website](https://earthengine.google.com/) or read through the [academic paper](https://doi.org/10.1016/j.rse.2017.06.031) published in 2017.
 
 Earth Engine is free for noncommercial and research use as detailed [here](https://earthengine.google.com/noncommercial/). Please follow the steps detailed below to create your own Google Cloud project and setup Earth Engine:
 

@@ -1,7 +1,7 @@
 """
 Generate Google Earth Engine indicators.
 
-1. Large Public Urban Green Space (LPUGS)
+1. Public Urban Green Space (PUGS)
 2. Global Urban Heat Vulnerability Index (GUHVI)
 """
 
@@ -130,13 +130,13 @@ def calculate_ndvi(image):
     return image.addBands(ndvi)
 
 
-def validate_lpugs_raster(path):
+def validate_pugs_raster(path):
     """
-    Check that a downloaded LPUGS NDVI raster is readable and contains valid data.
+    Check that a downloaded PUGS NDVI raster is readable and contains valid data.
 
     A raster left behind by an interrupted download may be truncated or contain
     only nodata (-9999) values; such a file would otherwise be silently reused,
-    resulting in spuriously empty LPUGS indicator results.
+    resulting in spuriously empty PUGS indicator results.
 
     Returns
     -------
@@ -160,7 +160,7 @@ def validate_lpugs_raster(path):
 # pixel data; regions whose output would exceed this must use the tiled path.
 GEE_DIRECT_DOWNLOAD_LIMIT_BYTES = 50331648
 
-def download_gee_geotiff(image, out_tif, region, scale, crs, est_bytes, label='LPUGS'):
+def download_gee_geotiff(image, out_tif, region, scale, crs, est_bytes, label='PUGS'):
     """
     Download an Earth Engine image (one or more bands) to a local GeoTIFF.
 
@@ -401,7 +401,7 @@ def get_study_region_ee_feature_collections(
     and fails with "Request payload size exceeds the limit: 10485760 bytes.".
     Simplifying the geometries locally (shapely) before conversion shrinks the
     serialized geometry significantly; a 100 m simplification has no practical
-    effect at the 50 m LPUGS raster resolution or the 1 km GUHVI grid.
+    effect at the 50 m PUGS raster resolution or the 1 km GUHVI grid.
     A server-side ``.simplify(maxError=100)`` does not
     help here, as the full vertex set is transmitted regardless.
 
@@ -447,20 +447,20 @@ def get_study_region_ee_feature_collections(
     return urban_study_region_fc, urban_study_region_1600m_fc
 
 
-def lpugs_analysis(r):
+def pugs_analysis(r):
     """
-    Generate Large Public Urban Green Space (LPUGS) indicators.
+    Generate Public Urban Green Space (PUGS) indicators.
 
-    1. Identify LPUGS overall greenery and store raster in PostgreSQL database
-    2. Identify LPUGS availability as a subset of areas of open space and store in PostgreSQL database
-    3. Perform network analysis to determine LPUGS accessibility within 400m
+    1. Identify PUGS overall greenery and store raster in PostgreSQL database
+    2. Identify PUGS availability as a subset of areas of open space and store in PostgreSQL database
+    3. Perform network analysis to determine PUGS accessibility within 400m
     4. Overlap population grid with accessible network service area to determine service area and store in PostgreSQL database
     """
     print(
-        '\nGenerating Large Public Urban Green Space (LPUGS) availability and accessibility indicators',
+        '\nGenerating Public Urban Green Space (PUGS) availability and accessibility indicators',
     )
 
-    # LPUGS OVERALL GREENERY
+    # PUGS OVERALL GREENERY
 
     # Fetch urban study region data
     (
@@ -473,7 +473,7 @@ def lpugs_analysis(r):
     # Engine request that references it past the ~10 MiB payload cap ("Request
     # payload size exceeds the limit: 10485760 bytes").  Simplifying locally
     # before conversion keeps request payloads small (no impact at the 50 m
-    # LPUGS resolution or 1 km GUHVI grid); the original GeoDataFrames remain
+    # PUGS resolution or 1 km GUHVI grid); the original GeoDataFrames remain
     # available for exact post-download masking.
     (
         urban_study_region_fc,
@@ -507,22 +507,22 @@ def lpugs_analysis(r):
     city = r.config['name']
     clean_city = clean_city_name_for_gee(city)
 
-    out_dir = os.path.join(r.config['region_dir'], 'lpugs_tiles')
+    out_dir = os.path.join(r.config['region_dir'], 'pugs_tiles')
     os.makedirs(out_dir, exist_ok=True)
     out_tif = os.path.join(
         out_dir,
-        f'GHSCI_LPUGS_Raster_{clean_city}_download.tif',
+        f'GHSCI_PUGS_Raster_{clean_city}_download.tif',
     )
 
-    if os.path.exists(out_tif) and not validate_lpugs_raster(out_tif):
+    if os.path.exists(out_tif) and not validate_pugs_raster(out_tif):
         print(
-            f"\nPreviously downloaded LPUGS raster {out_tif.replace('/home/ghsci/', '')} is corrupt or contains no valid NDVI data (possibly left by an interrupted download); deleting and re-downloading...",
+            f"\nPreviously downloaded PUGS raster {out_tif.replace('/home/ghsci/', '')} is corrupt or contains no valid NDVI data (possibly left by an interrupted download); deleting and re-downloading...",
         )
         os.remove(out_tif)
 
     if not os.path.exists(out_tif):
         print(
-            '\nProcessing Sentinel-2 imagery in Google Earth Engine to calculate NDVI and identify overall greenery for LPUGS availability indicator...',
+            '\nProcessing Sentinel-2 imagery in Google Earth Engine to calculate NDVI and identify overall greenery for PUGS availability indicator...',
         )
         # Load Sentinel-2 imagery, mask clouds, and calculate NDVI
         sentinel_collection = (
@@ -565,11 +565,11 @@ def lpugs_analysis(r):
             crs=crs_metric,
             est_bytes=est_bytes,
         )
-        if not validate_lpugs_raster(out_tif):
+        if not validate_pugs_raster(out_tif):
             # Fail loudly now, rather than allowing an empty raster to propagate
-            # silently through to empty LPUGS indicator results at report time.
+            # silently through to empty PUGS indicator results at report time.
             raise Exception(
-                f"Downloaded LPUGS raster {out_tif.replace('/home/ghsci/', '')} contains no valid NDVI data; this may reflect a transient Earth Engine issue.  Re-running the analysis will re-download it.",
+                f"Downloaded PUGS raster {out_tif.replace('/home/ghsci/', '')} contains no valid NDVI data; this may reflect a transient Earth Engine issue.  Re-running the analysis will re-download it.",
             )
     try:  # Check if the file was downloaded successfully
         if not os.path.exists(out_tif):
@@ -578,7 +578,7 @@ def lpugs_analysis(r):
             )
         # Read the stitched local file into memory bytes to keep compatibility with existing rasterio workflow
         print(
-            f"\nReading downloaded LPUGS GeoTIFF file into memory ({out_tif.replace('/home/ghsci/', '')})...",
+            f"\nReading downloaded PUGS GeoTIFF file into memory ({out_tif.replace('/home/ghsci/', '')})...",
         )
         with open(out_tif, 'rb') as f:
             raster_bytes = f.read()
@@ -728,26 +728,26 @@ def lpugs_analysis(r):
 
     dbRasterStorage = PostgresRasterStorage(db_config)
     dbRasterStorage.raster_to_db(
-        table_name='lpugs_overall_greenery',
+        table_name='pugs_overall_greenery',
         raster_data=clipped_raster_bytes,
     )
 
-    print("Created 'lpugs_overall_greenery' database table (NDVI>=0.2)")
+    print("Created 'pugs_overall_greenery' database table (NDVI>=0.2)")
 
-    # LPUGS AVAILABILITY (PostGIS-based using lpugs_overall_greenery raster)
+    # PUGS AVAILABILITY (PostGIS-based using pugs_overall_greenery raster)
 
     with r.engine.begin() as connection:
         # Ensure areas of open space table exists with required columns
         # (aos_public: aos_id, aos_ha_public, geom_public)
         # Only keep polygons >= 1 ha here as in the previous logic
 
-        # Drop and create LPUGS table
+        # Drop and create PUGS table
         connection.execute(
             text(
                 f"""
-            DROP TABLE IF EXISTS large_public_urban_green_space;
-            CREATE TABLE large_public_urban_green_space (
-                lpugs_id SERIAL PRIMARY KEY,
+            DROP TABLE IF EXISTS public_urban_green_space;
+            CREATE TABLE public_urban_green_space (
+                pugs_id SERIAL PRIMARY KEY,
                 aos_id INTEGER,
                 aos_ha_public FLOAT,
                 NDVI_mean FLOAT,
@@ -757,14 +757,15 @@ def lpugs_analysis(r):
             ),
         )
 
-        # Compute LPUGS stats in PostGIS:
-        # - Use lpugs_overall_greenery.rast (NDVI) and aos_public.geom_public
-        # - Filter polygons with aos_ha_public >= 1 and polygon geometry
+        # Compute PUGS stats in PostGIS:
+        # - Use pugs_overall_greenery.rast (NDVI) and aos_public.geom_public
+        # - Filter to polygon geometry (of any size; the previous 1 ha minimum
+        #   is no longer applied)
         #
         # NDVI_mean: mean NDVI within polygon, ignoring nodata (-9999)
 
         sql = f"""
-            INSERT INTO large_public_urban_green_space (aos_id, aos_ha_public, NDVI_mean, geom)
+            INSERT INTO public_urban_green_space (aos_id, aos_ha_public, NDVI_mean, geom)
             SELECT
                 a.aos_id,
                 a.aos_ha_public,
@@ -774,7 +775,7 @@ def lpugs_analysis(r):
             FROM
                 aos_public a
             CROSS JOIN
-                lpugs_overall_greenery r
+                pugs_overall_greenery r
             CROSS JOIN LATERAL
                 ST_Clip(r.rast, a.geom_public) AS clipped_rast
             CROSS JOIN LATERAL
@@ -799,29 +800,29 @@ def lpugs_analysis(r):
 
         connection.execute(text(sql))
 
-        lpugs_count = connection.execute(
-            text('SELECT COUNT(*) FROM large_public_urban_green_space'),
+        pugs_count = connection.execute(
+            text('SELECT COUNT(*) FROM public_urban_green_space'),
         ).scalar()
-        if lpugs_count == 0:
+        if pugs_count == 0:
             print(
-                'Warning: no large public urban green space polygons were identified (no public open space areas >= 1 ha with mean NDVI >= 0.2).  LPUGS accessibility results will be empty; if green space is known to exist in this study region, this may indicate an issue with the NDVI raster retrieved from Earth Engine.',
+                'Warning: no public urban green space polygons were identified (no public open space areas with valid mean NDVI >= 0.2).  PUGS accessibility results will be empty; if green space is known to exist in this study region, this may indicate an issue with the NDVI raster retrieved from Earth Engine.',
             )
         else:
             print(
-                f'Identified {lpugs_count} large public urban green space polygons (public open space >= 1 ha with mean NDVI >= 0.2)',
+                f'Identified {pugs_count} public urban green space polygons (public open space with mean NDVI >= 0.2)',
             )
 
-        # Whilst we are here, create the lpugs_nodes_30m_line table for LPUGS accessibility network analysis
+        # Whilst we are here, create the pugs_nodes_30m_line table for PUGS accessibility network analysis
         connection.execute(
             text(
                 """
-            DROP TABLE IF EXISTS lpugs_nodes_30m_line;
-            CREATE TABLE lpugs_nodes_30m_line AS
-            SELECT DISTINCT n.*, l.lpugs_id
+            DROP TABLE IF EXISTS pugs_nodes_30m_line;
+            CREATE TABLE pugs_nodes_30m_line AS
+            SELECT DISTINCT n.*, l.pugs_id
             FROM aos_public_any_nodes_30m_line n
-            JOIN large_public_urban_green_space l ON n.aos_id = l.aos_id;
+            JOIN public_urban_green_space l ON n.aos_id = l.aos_id;
 
-            CREATE INDEX lpugs_nodes_30m_line_gix ON lpugs_nodes_30m_line USING GIST (geom);
+            CREATE INDEX pugs_nodes_30m_line_gix ON pugs_nodes_30m_line USING GIST (geom);
         """,
             ),
         )
@@ -830,16 +831,16 @@ def lpugs_analysis(r):
     # rather than relying on the destination table loop in
     # _11_neighbourhood_analysis.py, which uses a cached table list that
     # pre-dates this table's creation on a first analysis pass (without these
-    # columns, LPUGS accessibility silently returns empty results).
-    r.add_nearest_node_associations('lpugs_nodes_30m_line')
+    # columns, PUGS accessibility silently returns empty results).
+    r.add_nearest_node_associations('pugs_nodes_30m_line')
 
     print(
-        "Created 'large_public_urban_green_space' database table with LPUGS availability polygons (NDVI>=0.2) and 'lpugs_nodes_30m_line' table for accessibility network analysis",
+        "Created 'public_urban_green_space' database table with PUGS availability polygons (NDVI>=0.2) and 'pugs_nodes_30m_line' table for accessibility network analysis",
     )
 
 
-def lpugs_indicators(r, accessible_nodes):
-    # CALCULATE LPUGS GIVEN ACCESSIBILITY
+def pugs_indicators(r, accessible_nodes):
+    # CALCULATE PUGS GIVEN ACCESSIBILITY
     crs_metric = r.config['crs_srid']
     srid_int = int(crs_metric.split(':')[1])
     # Fetch network data
@@ -879,7 +880,7 @@ def lpugs_indicators(r, accessible_nodes):
             )
 
     # Create accessibility grid (grid cells intersecting accessible edges)
-    lpugs_accessibility_grid = gpd.sjoin(
+    pugs_accessibility_grid = gpd.sjoin(
         population_grid_for_join[['grid_id', 'pop_est', 'geometry']],
         filtered_edges[['geometry']],
         how='inner',
@@ -889,8 +890,8 @@ def lpugs_indicators(r, accessible_nodes):
     # Drop duplicates that may result from the gpd.sjoin() operation above since a single grid cell (grid_id) can intersect with multiple edges in 'filtered_edges'.
     # Each intersection creates a new row in the output, even if the same grid cell is matched multiple times, so we need to filter out duplicates.
     # Also filter to only retain grid cells with a population estimate greater than 0
-    lpugs_accessibility_grid = (
-        lpugs_accessibility_grid[['grid_id', 'pop_est', 'geometry']]
+    pugs_accessibility_grid = (
+        pugs_accessibility_grid[['grid_id', 'pop_est', 'geometry']]
         .query('pop_est != 0')
         .drop_duplicates('grid_id')
     )
@@ -899,20 +900,20 @@ def lpugs_indicators(r, accessible_nodes):
     with r.engine.begin() as connection:
         # Drop and create tables
         connection.execute(
-            text('DROP TABLE IF EXISTS lpugs_accessible_nodes;'),
+            text('DROP TABLE IF EXISTS pugs_accessible_nodes;'),
         )
         connection.execute(
-            text('DROP TABLE IF EXISTS lpugs_accessible_network;'),
+            text('DROP TABLE IF EXISTS pugs_accessible_network;'),
         )
         connection.execute(
-            text('DROP TABLE IF EXISTS lpugs_accessibility_grid;'),
+            text('DROP TABLE IF EXISTS pugs_accessibility_grid;'),
         )
 
         # Create and populate accessible nodes table
         connection.execute(
             text(
                 f"""
-            CREATE TABLE lpugs_accessible_nodes (
+            CREATE TABLE pugs_accessible_nodes (
                 osmid INT8 PRIMARY KEY,
                 x FLOAT,
                 y FLOAT,
@@ -932,7 +933,7 @@ def lpugs_indicators(r, accessible_nodes):
 
             stmt = text(
                 f"""
-                INSERT INTO lpugs_accessible_nodes (osmid, x, y, geom)
+                INSERT INTO pugs_accessible_nodes (osmid, x, y, geom)
                 VALUES (:osmid, :x, :y, ST_SetSRID(ST_GeomFromText(:geom), {srid_int}));
             """,
             )
@@ -951,7 +952,7 @@ def lpugs_indicators(r, accessible_nodes):
         connection.execute(
             text(
                 f"""
-            CREATE TABLE lpugs_accessible_network (
+            CREATE TABLE pugs_accessible_network (
                 id SERIAL PRIMARY KEY,
                 u INT8,
                 v INT8,
@@ -968,7 +969,7 @@ def lpugs_indicators(r, accessible_nodes):
             filtered_edges = filtered_edges.to_crs(srid_int)
             stmt = text(
                 f"""
-                INSERT INTO lpugs_accessible_network (u, v, key, length, osmid, geom)
+                INSERT INTO pugs_accessible_network (u, v, key, length, osmid, geom)
                 VALUES (:u, :v, :key, :length, :osmid, ST_SetSRID(ST_GeomFromText(:geom), {srid_int}));
             """,
             )
@@ -989,7 +990,7 @@ def lpugs_indicators(r, accessible_nodes):
         connection.execute(
             text(
                 f"""
-            CREATE TABLE lpugs_accessibility_grid (
+            CREATE TABLE pugs_accessibility_grid (
                 grid_id TEXT PRIMARY KEY,
                 pop_est FLOAT,
                 geom GEOMETRY(Polygon, {srid_int})
@@ -998,10 +999,10 @@ def lpugs_indicators(r, accessible_nodes):
             ),
         )
 
-        if not lpugs_accessibility_grid.empty:
+        if not pugs_accessibility_grid.empty:
             stmt = text(
                 f"""
-                INSERT INTO lpugs_accessibility_grid (grid_id, pop_est, geom)
+                INSERT INTO pugs_accessibility_grid (grid_id, pop_est, geom)
                 VALUES (:grid_id, :pop_est, ST_SetSRID(ST_GeomFromText(:geom), {srid_int}));
             """,
             )
@@ -1011,12 +1012,12 @@ def lpugs_indicators(r, accessible_nodes):
                     'pop_est': row['pop_est'],
                     'geom': row['geometry'].wkt,
                 }
-                for _, row in lpugs_accessibility_grid.iterrows()
+                for _, row in pugs_accessibility_grid.iterrows()
             ]
             connection.execute(stmt, params)
 
     print(
-        '\nLarge Public Urban Green Space (LPUGS) availability and accessibility indicators complete',
+        '\nPublic Urban Green Space (PUGS) availability and accessibility indicators complete',
     )
 
 
@@ -2210,5 +2211,5 @@ def guhvi_analysis(r):  # noqa: C901
 
 def earth_engine_analysis(r):
     initialize_gee()
-    lpugs_analysis(r)
+    pugs_analysis(r)
     guhvi_analysis(r)

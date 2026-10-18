@@ -23,7 +23,7 @@ Naming conventions and parameters,"Fresh food, pooled (market, supermarket or co
 Naming conventions and parameters,Convenience store,convenience,,,Food
 Naming conventions and parameters,Large public open space (≥ 1.5 ha),public_open_space_large,,,Open space (strict)
 Naming conventions and parameters,Any public open space,public_open_space_any,,,Open space (lenient)
-Naming conventions and parameters,Large public green space (≥ 1 ha; OpenStreetMap and Earth Engine),large_public_green_space,,,Open space
+Naming conventions and parameters,Public green space (OpenStreetMap and Earth Engine),public_green_space,,,Open space
 Naming conventions and parameters,Frequent public transport (≤ 20 min daytime service; GTFS),pt_frequent,,,"Transport (strict, cycling)"
 Naming conventions and parameters,"Public transport, ≤ 20 min daytime service (GTFS)",pt_gtfs_freq_20,,,Transport (walking)
 Naming conventions and parameters,"Public transport, ≤ 30 min daytime service (GTFS)",pt_gtfs_freq_30,,,Transport (walking)

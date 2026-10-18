@@ -8,7 +8,7 @@ permalink: /Earth-Engine-indicators/
 
 Two optional spatial indicators are generated using [Google Earth Engine](https://earthengine.google.com/), a cloud-based platform for planetary-scale geospatial analysis:
 
-1. **Large Public Urban Green Space (LPUGS)** — availability of, and access to, large public urban green space.
+1. **Public Urban Green Space (PUGS)** — availability of, and access to, public urban green space.
 2. **Global Urban Heat Vulnerability Index (GUHVI)** — a composite index of urban heat vulnerability, along with the sub-indices and sub-indicators that make it up.
 
 These are optional.  With `gee: false`, or when running the standard container, they are simply skipped and the software behaves exactly as it otherwise would.
@@ -32,7 +32,7 @@ Set `gee` in your study region configuration file:
 ```yaml
 ## Optional Google Earth Engine indicator configuration
 ## Set 'gee' below to true to compute and generate the below indicators, or set false to skip
-## 1. Large Public Urban Green Space (LPUGS) accessibility and availability
+## 1. Public Urban Green Space (PUGS) accessibility and availability
 ## 2. Global Urban Heat Vulnerability Index (GUHVI)
 gee: true
 ```
@@ -58,12 +58,12 @@ This means a configuration with `gee: true` remains usable by collaborators who 
 
 ## The indicators
 
-### Large Public Urban Green Space
+### Public Urban Green Space
 
-Large public urban green space is identified from satellite imagery, and access to it is measured along the pedestrian network in the same way as for other destinations, producing:
+Public urban green space is identified from satellite imagery, and access to it is measured along the pedestrian network in the same way as for other destinations, producing:
 
-- `pct_access_400m_large_public_green_space_score` at the grid scale, and the corresponding population weighted city estimate `pop_pct_access_400m_large_public_green_space_score`
-- a `large_public_urban_green_space` layer in the study region geopackage, which is used as a map overlay in the generated report
+- `pct_access_400m_public_green_space_score` at the grid scale, and the corresponding population weighted city estimate `pop_pct_access_400m_public_green_space_score`
+- a `public_urban_green_space` layer in the study region geopackage, which is used as a map overlay in the generated report
 
 ### Global Urban Heat Vulnerability Index
 

@@ -3632,7 +3632,6 @@ class Region:
         LABELS = list(LABELS)
         for phrase_key, area in [
             ('Large public open space', 1.5),
-            ('Large public green space', 1),
         ]:
             target = phrases.get(phrase_key)
             if target is not None:
@@ -3739,7 +3738,7 @@ def get_citations(config, language, reporting_template):
         'spatial_citation': 'Boeing G, Higgs C, Liu S, Giles-Corti B, Sallis JF, Cerin E, et al. Using open data and open-source software to develop spatial indicators of urban design and transport features for achieving healthy and sustainable cities. The Lancet Global Health. 2022;10(6):e907-e18. https://doi.org/10.1016/S2214-109X(22)00072-9.',
         'thresholds_citation': 'Cerin E, Sallis JF, Salvo D, Hinckson E, Conway TL, Owen N, et al. Determining thresholds for spatial urban design and transport features that support walking to create healthy and sustainable cities: findings from the IPEN Adult study. The Lancet Global Health. 2022;10(6):e895-e906. https://doi.org/10.1016/S2214-109X(22)00068-7 ',
         'guhvi_citation': 'Turner R, Higgs C, Sun C, Resendiz E, Peng K, Cheng X, et al. Development and validation of the Global Urban Heat Vulnerability Index (GUHVI). Urban Climate. 2025;64:102716. https://doi.org/10.1016/j.uclim.2025.102716.',
-        'lpugs_citation': 'Turner R, Higgs C, Heikinheimo V, Hunter R, Vargas JCB, Liu S, et al. Internationally Validated Open Access Indicators of Large Public Urban Green Space for Healthy and Sustainable Cities. Geographical Analysis. 2025;57(4):793-808. https://doi.org/10.1111/gean.70023.',
+        'pugs_citation': 'Turner R, Higgs C, Heikinheimo V, Hunter R, Vargas JCB, Liu S, et al. Internationally Validated Open Access Indicators of Large Public Urban Green Space for Healthy and Sustainable Cities. Geographical Analysis. 2025;57(4):793-808. https://doi.org/10.1111/gean.70023.',
         'colour_citation': 'Crameri, F. (2018). Scientific colour-maps (3.0.4). Zenodo. https://doi.org/10.5281/zenodo.1287763',
         'citations': '{citation_series}: {study_citations}\n\n{citation_population}: {region_population_citation}\n\n{citation_boundaries}: {region_urban_region_citation}\n\n{citation_features}: {region_OpenStreetMap_citation}\n\n{citation_colour}: {colour_citation}',
     }
@@ -3763,7 +3762,7 @@ def get_citations(config, language, reporting_template):
                 + '\n\n'
                 + citations['guhvi_citation']
                 + '\n\n'
-                + citations['lpugs_citation']
+                + citations['pugs_citation']
             )
     citations['study_citations'] = (
         citations['study_citations'] + '\n\n' + citations['software_citation']

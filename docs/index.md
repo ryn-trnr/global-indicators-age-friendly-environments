@@ -61,7 +61,7 @@ The default core set of **spatial urban indicators** calculated includes:
 - A walkability index
 
 Two further spatial indicators can optionally be generated using Google Earth Engine (see [Earth Engine indicators](https://healthysustainablecities.github.io/global-indicators/Earth-Engine-indicators)):
-- Availability of, and access to, large public urban green space
+- Availability of, and access to, public urban green space
 - A Global Urban Heat Vulnerability Index, along with its component sub-indices and sub-indicators
 
 Your own destination, public open space and sample point data can also be used in place of, or alongside, OpenStreetMap; see [Custom data](https://healthysustainablecities.github.io/global-indicators/Custom-data).

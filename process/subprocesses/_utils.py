@@ -683,7 +683,7 @@ def generate_resources(  # noqa: C901
             r.config['ee']['green_space_accessibility'] = {}
         if 'percent' not in r.config['ee']['green_space_accessibility']:
             percentage = r.get_city_stats()['access'][
-                'Large public green space'
+                'Public green space'
             ]
             r.config['ee']['green_space_accessibility']['percent'] = percentage
         file = f'{figure_path}/green_space_accessibility_{locale}.jpg'
@@ -692,7 +692,7 @@ def generate_resources(  # noqa: C901
                 f"  {file.replace(config['region_dir'], '')} (exists; delete or rename to re-generate)",
             )
         else:
-            ee_large_public_green_space_map(
+            ee_public_green_space_map(
                 r=r,
                 gdf_boundary=gdf_city,
                 path=file,
@@ -707,7 +707,7 @@ def generate_resources(  # noqa: C901
             print(f"  {file.replace(config['region_dir'], '')}")
 
         file = f'{figure_path}/green_space_accessibility_{locale}_no_label.jpg'
-        ee_large_public_green_space_map(
+        ee_public_green_space_map(
             r=r,
             gdf_boundary=gdf_city,
             path=file,
@@ -1361,7 +1361,7 @@ def ee_overall_greenery_map(
     ax.set_xlim(region_bounds[0] - x_buffer, region_bounds[2] + x_buffer)
     ax.set_ylim(region_bounds[1] - y_buffer, region_bounds[3] + y_buffer)
     try:
-        raster_bytes = fetch_raster_from_postgres('lpugs_overall_greenery')
+        raster_bytes = fetch_raster_from_postgres('pugs_overall_greenery')
         with MemoryFile(raster_bytes) as memfile:
             with memfile.open() as src:
                 buffered_boundary_raster_crs = gdf_boundary.to_crs(src.crs)
@@ -1526,7 +1526,7 @@ def ee_overall_greenery_map(
     return path
 
 
-def ee_large_public_green_space_map(
+def ee_public_green_space_map(
     r,
     gdf_boundary,
     path,
@@ -1540,7 +1540,7 @@ def ee_large_public_green_space_map(
     basemap='satellite',
     alpha=0.7,
 ):
-    """Map showing overall availabiltiy and accessibility to large public urban green spaces."""
+    """Map showing overall availabiltiy and accessibility to public urban green spaces."""
     if os.path.exists(path):
         print(
             f'  figures/{os.path.basename(path)}; Already exists; Delete to re-generate.',
@@ -1554,9 +1554,9 @@ def ee_large_public_green_space_map(
     if phrases is None:
         phrases = {'north arrow': 'N', 'km': 'km'}
 
-    green_spaces = r.get_gdf('large_public_urban_green_space')
+    green_spaces = r.get_gdf('public_urban_green_space')
     accessibility = r.get_gdf(
-        f"SELECT pct_access_400m_large_public_green_space_score, geom FROM {r.config['grid_summary']}",
+        f"SELECT pct_access_400m_public_green_space_score, geom FROM {r.config['grid_summary']}",
     ).fillna('No Data')
     percentage = r.config['ee']['green_space_accessibility']['percent']
     pink_cmap = LinearSegmentedColormap.from_list(
@@ -1610,7 +1610,7 @@ def ee_large_public_green_space_map(
         ax.set_ylim(region_bounds[1] - y_buffer, region_bounds[3] + y_buffer)
     accessibility.plot(
         ax=ax,
-        column='pct_access_400m_large_public_green_space_score',
+        column='pct_access_400m_public_green_space_score',
         cmap=pink_cmap,
         vmin=0,
         vmax=100,
@@ -1625,7 +1625,7 @@ def ee_large_public_green_space_map(
             facecolor='#8ECC3C',
             alpha=alpha,
             edgecolor='none',
-            label=phrases['Large public green space'],
+            label=phrases['Public green space'],
         ),
     ]
 
@@ -3095,9 +3095,13 @@ def _pdf_insert_health_services_spatial_page(pdf, pages, phrases, r):
         f"pct_access_400m_health_services_score_"
         f"{r.config['pdf']['language']}_no_label.jpg"
     )
-    health_label = health_figures[
-        'pct_access_400m_health_services_score'
-    ]['label']
+    # The label phrase carries the city-level percentage, which
+    # compile_spatial_map_info substitutes into phrases before figures are
+    # generated (mirroring the open space page); fall back to the raw
+    # configured label where the phrase is not yet available for a language.
+    health_label = phrases.get(
+        'Percentage of population with access to health services within 400 m',
+    ) or health_figures['pct_access_400m_health_services_score']['label']
     template['pct_access_400m_health_services_score_label'] = health_label
     template['health_header'] = 'Health services'
     template['health_description'] = (
@@ -3144,7 +3148,7 @@ def _pdf_insert_nature_based_solutions(pdf, pages, phrases, r):
     if '_ee' not in r.config['pdf']['report_template'] or not r.config['gee']:
         return pdf
     # Optional Earth Engine pages: overall greenery, then accessibility to
-    # large public urban green space
+    # public urban green space
     if r.config['pdf']['report_template'] == 'policy_spatial_ee':
         template = FlexTemplate(pdf, elements=pages['19'])
     pdf.add_page()

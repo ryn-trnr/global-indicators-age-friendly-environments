@@ -524,7 +524,7 @@ country_gdp:
 #########
 ## Optional Google Earth Engine indicator configuration
 ## Set 'gee' below to true to compute and generate the below indicators, or set false to skip
-## 1. Large Public Urban Green Space (LPUGS) accessibility and availability
+## 1. Public Urban Green Space (PUGS) accessibility and availability
 ## 2. Global Urban Heat Vulnerability Index (GUHVI)
 ##
 ## These additionally require the software to have been launched using the

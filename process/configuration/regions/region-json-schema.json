@@ -641,7 +641,7 @@
       },
       "gee": {
         "type": ["boolean", "null"],
-        "description": "Set to true to additionally compute the optional Google Earth Engine indicators: Large Public Urban Green Space (LPUGS) accessibility and availability, and the Global Urban Heat Vulnerability Index (GUHVI).  This requires the software to have been launched using the Earth Engine container (global-indicators-ee.bat or global-indicators-ee.sh) along with a Google Cloud project registered for Earth Engine; where Earth Engine is unavailable, a message is displayed and analysis proceeds without these indicators.  The 'spatial_ee' and 'policy_spatial_ee' reporting templates are used to include them in generated reports.  Default: false."
+        "description": "Set to true to additionally compute the optional Google Earth Engine indicators: Public Urban Green Space (PUGS) accessibility and availability, and the Global Urban Heat Vulnerability Index (GUHVI).  This requires the software to have been launched using the Earth Engine container (global-indicators-ee.bat or global-indicators-ee.sh) along with a Google Cloud project registered for Earth Engine; where Earth Engine is unavailable, a message is displayed and analysis proceeds without these indicators.  The 'spatial_ee' and 'policy_spatial_ee' reporting templates are used to include them in generated reports.  Default: false."
       },
       "policy_review": {
         "type": ["string","null"],

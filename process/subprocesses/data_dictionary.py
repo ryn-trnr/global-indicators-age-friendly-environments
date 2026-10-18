@@ -516,9 +516,8 @@ DESTINATION_PHRASES = {
         'a natural blue space -- a river, canal, drain, lake, reservoir, '
         'wetland, beach or coast (source: OpenStreetMap or custom data)'
     ),
-    'large_public_green_space': (
-        'a large public green space of at least 1 hectare (source: '
-        'OpenStreetMap, Google Earth Engine)'
+    'public_green_space': (
+        'a public green space (source: OpenStreetMap, Google Earth Engine)'
     ),
     'pt_gtfs_any': 'any public transport stop (source: GTFS)',
     'pt_gtfs_freq_30': (
@@ -1256,9 +1255,8 @@ def _reference_parameter_sections():
                     'Open space (lenient)',
                 ),
                 (
-                    'Large public green space (≥ 1 ha; OpenStreetMap '
-                    'and Earth Engine)',
-                    'large_public_green_space',
+                    'Public green space (OpenStreetMap and Earth Engine)',
+                    'public_green_space',
                     'Open space',
                 ),
                 (

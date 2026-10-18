@@ -40,8 +40,8 @@ def export_indicators(r, gpkg=True, csv=True):
         tables = tables + [resolve_gtfs_setting('headway')]
     if r.config['gee']:
         tables = tables + [
-            'large_public_urban_green_space',
-            'lpugs_nodes_30m_line',
+            'public_urban_green_space',
+            'pugs_nodes_30m_line',
             'guhvi_lst',
             'guhvi_guhvi',
         ]

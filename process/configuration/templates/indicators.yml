@@ -6,6 +6,7 @@ nearest_node_analyses:
         - convenience
         - pt_any
         - health_services
+        - community_facilities
         category_field: dest_name
         filter_field: null
         filter_iterations: null
@@ -21,6 +22,7 @@ nearest_node_analyses:
         - convenience
         - pt_osm_any
         - health_services
+        - community_facilities
     Public open space:
         categories: []
         category_field: null
@@ -66,6 +68,26 @@ sample_point_analyses:
             - sp_access_convenience_score
             - sp_access_pt_any_score
             formula: sum
+    Access to all daily living destinations:
+        sp_access_daily_living_all_score:
+            axis: 1
+            columns:
+            - sp_daily_living_score
+            formula: greater_than_or_equal_to(3)
+    Safe daily living score:
+        sp_safe_daily_living_score:
+            axis: 1
+            columns:
+            - sp_access_safe_fresh_food_market_score
+            - sp_access_safe_convenience_score
+            - sp_access_safe_pt_any_score
+            formula: sum
+    Access to all safe daily living destinations:
+        sp_access_safe_daily_living_all_score:
+            axis: 1
+            columns:
+            - sp_safe_daily_living_score
+            formula: greater_than_or_equal_to(3)
     Walkability index:
         sp_walkability_index:
             axis: 0
@@ -95,9 +117,15 @@ output:
         - sp_access_pt_gtfs_freq_20_score
         - sp_access_pt_any_score
         - sp_access_health_services_score
+        - sp_access_pt_transit_health_services_score
+        - sp_access_pt_safe_freq_20_score
+        - sp_access_pt_transit_community_facilities_score
+        - sp_access_community_facilities_score
         - sp_local_nh_avg_pop_density
         - sp_local_nh_avg_intersection_density
         - sp_daily_living_score
+        - sp_access_daily_living_all_score
+        - sp_access_safe_daily_living_all_score
         - sp_walkability_index
     neighbourhood_variables:
         - pct_access_400m_fresh_food_market_score
@@ -110,9 +138,15 @@ output:
         - pct_access_400m_pt_gtfs_freq_20_score
         - pct_access_400m_pt_any_score
         - pct_access_400m_health_services_score
+        - pct_access_400m_pt_transit_health_services_score
+        - pct_access_400m_pt_safe_freq_20_score
+        - pct_access_400m_pt_transit_community_facilities_score
+        - pct_access_400m_community_facilities_score
         - local_nh_population_density
         - local_nh_intersection_density
         - local_daily_living
+        - pct_access_400m_daily_living_all_score
+        - pct_access_400m_safe_daily_living_all_score
         - local_walkability
     city_variables:
         - pop_pct_access_400m_fresh_food_market_score
@@ -125,9 +159,15 @@ output:
         - pop_pct_access_400m_pt_gtfs_freq_20_score
         - pop_pct_access_400m_pt_any_score
         - pop_pct_access_400m_health_services_score
+        - pop_pct_access_400m_pt_transit_health_services_score
+        - pop_pct_access_400m_pt_safe_freq_20_score
+        - pop_pct_access_400m_pt_transit_community_facilities_score
+        - pop_pct_access_400m_community_facilities_score
         - pop_nh_pop_density
         - pop_nh_intersection_density
         - pop_daily_living
+        - pop_pct_access_400m_daily_living_all_score
+        - pop_pct_access_400m_safe_daily_living_all_score
         - pop_walkability
     extra_unweighted_vars:
         - local_nh_population_density
@@ -151,16 +191,16 @@ report:
                 p75: 48.15
         pop_pct_access_400m_public_open_space_any_score:
             title: Any public open space
-            ghscic_reference:
-                p25: 59.22
-                p50: 84.94
-                p75: 90.07
         pop_pct_access_400m_public_open_space_large_score:
             title: Large public open space
             ghscic_reference:
                 p25: 24.60
                 p50: 46.75
                 p75: 62.81
+            ghscic_reference:
+                p25: 59.22
+                p50: 84.94
+                p75: 90.07
         pop_pct_access_400m_pt_any_score:
             title: Public transport stop
             ghscic_reference:
@@ -175,6 +215,10 @@ report:
                 p75: 76.16
         pop_pct_access_400m_health_services_score:
             title: Health services
+        pop_pct_access_400m_pt_transit_health_services_score:
+            title: Public transport access to health services
+        pop_pct_access_400m_pt_safe_freq_20_score:
+            title: Safe routes to public transport
     thresholds:
         "Mean 1000 m neighbourhood population per km\xB2":
             field: local_nh_population_density
@@ -208,11 +252,46 @@ report:
             outfile: 'pct_access_400m_pt_{language}.jpg'
             range: [-0,100]
             tick_labels: ['{No}','{Yes}']
+            overlay:
+                layer: pt_stops_headway
+                where: "headway <= 20"
         pct_access_400m_public_open_space_large_score:
             label: Percentage of population with access to public open space of area 1.5 hectares or larger
             outfile: 'pct_access_400m_public_open_space_large_score_{language}.jpg'
             range: [-0,100]
             tick_labels: ['{No}','{Yes}']
+            overlay:
+                layer: aos_public
+                where: "aos_ha_public > 1.5"
+        pct_access_400m_public_open_space_any_score:
+            label: Percentage of population with access to public open space
+            outfile: 'pct_access_400m_public_open_space_any_score_{language}.jpg'
+            range: [-0,100]
+            tick_labels: ['{No}','{Yes}']
+            overlay: aos_public
+        pct_access_400m_pt_any_score:
+            label: Percentage of population with access to any public transport stop or station
+            outfile: 'pct_access_400m_pt_any_score_{language}.jpg'
+            range: [-0,100]
+            tick_labels: ['{No}','{Yes}']
+            overlay:
+                layer: pt_stops_headway
+        pct_access_400m_daily_living_all_score:
+            label: Percentage of population with access to daily living destinations
+            outfile: 'pct_access_400m_daily_living_all_score_{language}.jpg'
+            range: [-0,100]
+            tick_labels: ['{No}','{Yes}']
+            overlay:
+                layer: destinations
+                where: "dest_name IN ('fresh_food_market','convenience','pt_any')"
+        pct_access_400m_safe_daily_living_all_score:
+            label: Percentage of population with access to all daily living destinations along safe walking routes
+            outfile: 'pct_access_400m_safe_daily_living_all_score_{language}.jpg'
+            range: [-0,100]
+            tick_labels: ['{No}','{Yes}']
+            overlay:
+                layer: destinations
+                where: "dest_name IN ('fresh_food_market','convenience','pt_any')"
         pct_access_400m_health_services_score:
             label: Percentage of population with access to health services within 400 m
             outfile: 'pct_access_400m_health_services_score_{language}.jpg'
@@ -221,6 +300,38 @@ report:
             overlay:
                 layer: destinations
                 where: "dest_name = 'health_services'"
+        pct_access_400m_pt_transit_health_services_score:
+            label: Percentage of population with public transport access to health services within 400 m
+            outfile: 'pct_access_400m_pt_transit_health_services_score_{language}.jpg'
+            range: [-0,100]
+            tick_labels: ['{No}','{Yes}']
+            overlay:
+                layer: destinations
+                where: "dest_name = 'health_services'"
+        pct_access_400m_pt_safe_freq_20_score:
+            label: Percentage of population with access to frequent public transport within 400 m along safe walking routes
+            outfile: 'pct_access_400m_pt_safe_freq_20_score_{language}.jpg'
+            range: [-0,100]
+            tick_labels: ['{No}','{Yes}']
+            overlay:
+                layer: pt_stops_headway
+                where: "headway <= 20"
+        pct_access_400m_pt_transit_community_facilities_score:
+            label: Percentage of population with public transport access to community and social facilities within 400 m
+            outfile: 'pct_access_400m_pt_transit_community_facilities_score_{language}.jpg'
+            range: [-0,100]
+            tick_labels: ['{No}','{Yes}']
+            overlay:
+                layer: destinations
+                where: "dest_name = 'community_facilities'"
+        pct_access_400m_community_facilities_score:
+            label: Percentage of population with access to community and social facilities within 400 m
+            outfile: 'pct_access_400m_community_facilities_score_{language}.jpg'
+            range: [-0,100]
+            tick_labels: ['{No}','{Yes}']
+            overlay:
+                layer: destinations
+                where: "dest_name = 'community_facilities'"
     policy:
         analyses:
           - Presence

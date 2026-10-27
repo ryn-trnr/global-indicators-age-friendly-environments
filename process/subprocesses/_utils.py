@@ -571,10 +571,16 @@ def generate_resources(  # noqa: C901
                         overlay = r.get_gdf(
                             f'SELECT * FROM {layer} WHERE {where}',
                         )
+                    elif layer:
+                        # a mapping with a layer but no condition, e.g.
+                        #   overlay: {layer: pt_stops_headway}
+                        overlay = r.get_gdf(layer)
                     else:
                         overlay = None
-                else:
+                elif overlay_setting:
                     overlay = r.get_gdf(overlay_setting)
+                else:
+                    overlay = None
                 overlay_colour = spatial_maps[f].get(
                     'overlay_colour',
                     '#8ECC3C',
@@ -1162,15 +1168,16 @@ def spatial_dist_map(
     if tick_labels is not None:
         tick_labels = [mpl_text(x, locale_profile) for x in tick_labels]
         if len(tick_labels) == len(range):
-            cax.xaxis.set_major_locator(ticker.FixedLocator(range))
-            cax.set_xticklabels(tick_labels)
+            ticks_loc = list(range)
         else:
-            # cax.set_xticks(cax.get_xticks().tolist())
-            # cax.set_xticklabels(tick_labels)
-            cax.xaxis.set_major_locator(ticker.MaxNLocator(len(tick_labels)))
-            ticks_loc = cax.get_xticks().tolist()
-            cax.xaxis.set_major_locator(ticker.FixedLocator(ticks_loc))
-            cax.set_xticklabels(tick_labels)
+            # Place the labels evenly across the mapped range so that the
+            # number of tick locations always matches the number of labels
+            # (a MaxNLocator would return at most, not exactly, that many).
+            ticks_loc = list(
+                np.linspace(range[0], range[1], len(tick_labels)),
+            )
+        cax.xaxis.set_major_locator(ticker.FixedLocator(ticks_loc))
+        cax.set_xticklabels(tick_labels)
     plt.tight_layout()
     fig.savefig(path, dpi=dpi)
     plt.close(fig)
@@ -1511,6 +1518,7 @@ def ee_overall_greenery_map(
             0.05,
             phrases['overall_greenery_label'].format(
                 percent=_pct(fnum(percentage, '0.0', locale), locale),
+                city_name=phrases['city_name'],
             ),
             ha='center',
             va='bottom',
@@ -1686,6 +1694,7 @@ def ee_public_green_space_map(
             0.05,
             phrases['green_space_accessibility_label'].format(
                 percent=_pct(fnum(percentage, '0.0', locale), locale),
+                city_name=phrases['city_name'],
             ),
             ha='center',
             va='bottom',
@@ -2987,38 +2996,6 @@ def _pdf_insert_transport_policy_page(pdf, pages, phrases, r):
     return pdf
 
 
-def _pdf_insert_transport_spatial_page(pdf, pages, phrases, r):
-    """Add and render PDF report thresholds page."""
-    if r.config['pdf']['report_template'].startswith('spatial'):
-        template = FlexTemplate(pdf, elements=pages['10'])
-    elif r.config['pdf']['report_template'].startswith('policy_spatial'):
-        template = FlexTemplate(pdf, elements=pages['15'])
-    else:
-        return pdf
-    results = r.config['pdf']['indicators_region']
-    regular_pt = results['pop_pct_access_400m_pt_gtfs_freq_20_score'][0]
-    if regular_pt is None or pd.isna(
-        results['pop_pct_access_400m_pt_gtfs_freq_20_score'][0],
-    ):
-        pt_label = phrases[
-            'Percentage of population with access to public transport'
-        ]
-    else:
-        pt_label = phrases[
-            'Percentage of population with access to public transport with service frequency of 20 minutes or less'
-        ]
-    template['pct_access_400m_pt.jpg'] = (
-        f"{r.config['pdf']['figure_path']}/pct_access_400m_pt_{r.config['pdf']['language']}_no_label.jpg"
-    )
-    template['pct_access_400m_pt_label'] = pt_label.replace(
-        '\n',
-        ' ',
-    ).replace('  ', ' ')
-    pdf.add_page()
-    template.render()
-    return pdf
-
-
 def _pdf_insert_open_space_policy_page(pdf, pages, phrases, r):
     """Add and render PDF report thresholds page."""
     if r.config['pdf']['report_template'] == 'policy':
@@ -3044,72 +3021,199 @@ def _pdf_insert_open_space_policy_page(pdf, pages, phrases, r):
     return pdf
 
 
-def _pdf_insert_open_space_spatial_page(pdf, pages, phrases, r):
-    """Add and render PDF report thresholds page."""
-    if r.config['pdf']['report_template'].startswith('spatial'):
-        template = FlexTemplate(pdf, elements=pages['11'])
-    elif r.config['pdf']['report_template'].startswith('policy_spatial'):
-        template = FlexTemplate(pdf, elements=pages['17'])
-    else:
-        return pdf
-    pdf.add_page()
-    template['pct_access_400m_public_open_space_large_score'] = (
-        f"{r.config['pdf']['figure_path']}/pct_access_400m_public_open_space_large_score_{r.config['pdf']['language']}_no_label.jpg"
-    )
-    pos_label = (
-        phrases[
-            'Percentage of population with access to public open space of area 1.5 hectares or larger'
-        ]
-        .replace('\n', ' ')
-        .replace('  ', ' ')
-    )
-    template['pct_access_400m_public_open_space_large_score_label'] = pos_label
-    template.render()
-    return pdf
+# The age-friendly indicator pages, rendered one per page in this order.  Each
+# entry is (page, header, description, figure key, kind):
+#   'map'       a percentage access map from report.spatial_distribution_figures
+#   'threshold' the neighbourhood threshold page layout from report.thresholds
+# A page is only rendered where its figure is configured for the study region,
+# so a report template that cannot produce a given indicator (for example the
+# green space indicator in a non-Earth-Engine report) omits that page.
+AGE_FRIENDLY_INDICATOR_PAGES = [
+    (
+        60,
+        'Access to any public open space',
+        'Residential access within 400m of public open space of any size',
+        'pct_access_400m_public_open_space_any_score',
+        'map',
+    ),
+    (
+        61,
+        'Access to frequent public transport service',
+        'Residential access within 400m of public transport service with 20 '
+        'mins or better average weekday frequency',
+        'pct_access_400m_pt_gtfs_freq_20_score',
+        'map',
+    ),
+    (
+        62,
+        'Access to public transport service',
+        'Residential access within 400m of public transport service of any '
+        'frequency',
+        'pct_access_400m_pt_any_score',
+        'map',
+    ),
+    (
+        63,
+        'Pedestrian infrastructure and street connectivity',
+        'GOHSC Neighbourhood intersection density (per km\u00b2)',
+        'local_nh_intersection_density',
+        'threshold',
+    ),
+    (
+        64,
+        'Access to green space and vegetation',
+        'Residential access within 400m of public green space of any size',
+        'pct_access_400m_public_green_space_score',
+        'map',
+    ),
+    (
+        65,
+        'Public transport access to health services',
+        'Residential access within 400m to the nearest PT stop/station, and '
+        'within 400m from destination PT stop/station to health service',
+        'pct_access_400m_pt_transit_health_services_score',
+        'map',
+    ),
+    (
+        66,
+        'Access to daily living destinations',
+        'Residential access within 400 m of daily living destinations (fresh '
+        'food, convenience store and public transport service)',
+        'pct_access_400m_daily_living_all_score',
+        'map',
+    ),
+    (
+        67,
+        'Access to large public open space',
+        'Residential access within 400m of public open space of at least 1.5 '
+        'hectares',
+        'pct_access_400m_public_open_space_large_score',
+        'map',
+    ),
+    (
+        68,
+        'Safe access to public transport service',
+        'Safe network defined as OpenStreetMap footway, path, pedestrian, '
+        'living_street, residential AND width >= 1.5',
+        'pct_access_400m_pt_safe_freq_20_score',
+        'map',
+    ),
+    (
+        69,
+        'Safe access to daily living destinations',
+        'Residential access within 400 m of daily living destinations (fresh '
+        'food, convenience store and public transport) using safe network',
+        'pct_access_400m_safe_daily_living_all_score',
+        'map',
+    ),
+    (
+        70,
+        'Safe mobility and participation in the city',
+        'GOHSC Neighbourhood walkability relative to 25 cities '
+        'internationally',
+        'all_cities_walkability',
+        'accessibility',
+    ),
+    (
+        71,
+        'Access to community and social facilities',
+        'Destinations include community centres, gardens, libraries, public '
+        'toilets, arts centres, museums, gyms, outdoor gyms',
+        'pct_access_400m_community_facilities_score',
+        'map',
+    ),
+    (
+        72,
+        'Public transport access to community and social facilities',
+        'Destinations include community centres, gardens, libraries, public '
+        'toilets, arts centres, museums, gyms, outdoor gyms',
+        'pct_access_400m_pt_transit_community_facilities_score',
+        'map',
+    ),
+]
 
 
-def _pdf_insert_health_services_spatial_page(pdf, pages, phrases, r):
-    """Add and render the health services accessibility spatial page."""
-    report_template = r.config['pdf']['report_template']
-    if report_template not in ('spatial', 'spatial_ee'):
-        return pdf
-    health_figures = r.config['pdf']['indicators']['report'].get(
-        'spatial_distribution_figures',
-        {},
+def _threshold_scenario(report, field):
+    """Name of the threshold scenario whose map is derived from ``field``."""
+    return next(
+        (
+            scenario
+            for scenario, values in report['thresholds'].items()
+            if values.get('field') == field
+        ),
+        None,
     )
-    if 'pct_access_400m_health_services_score' not in health_figures:
-        print(
-            '  Health services spatial page skipped: health_services access '
-            'indicator is not configured in the indicator definitions.',
+
+
+def _indicator_figure_path(r, key, kind='map'):
+    """Path of the rendered figure for an indicator page, or None if absent."""
+    report = r.config['pdf']['indicators']['report']
+    language = r.config['pdf']['language']
+    if kind == 'threshold':
+        if _threshold_scenario(report, key) is None:
+            return None
+        outfile = f'{key}_{language}.jpg'
+    elif key in report['spatial_distribution_figures']:
+        outfile = report['spatial_distribution_figures'][key]['outfile'].format(
+            language=language,
         )
-        return pdf
-    if report_template == 'spatial':
-        # page 13 is reserved for the health services spatial page
-        template = FlexTemplate(pdf, elements=pages['13'])
     else:
-        # EE pages are shifted up by one, freeing page 12 for health services
-        template = FlexTemplate(pdf, elements=pages['12'])
-    pdf.add_page()
-    template['pct_access_400m_health_services_score'] = (
-        f"{r.config['pdf']['figure_path']}/"
-        f"pct_access_400m_health_services_score_"
-        f"{r.config['pdf']['language']}_no_label.jpg"
+        return None
+    stem, extension = os.path.splitext(outfile)
+    return (
+        f"{r.config['pdf']['figure_path']}/{stem}_no_label{extension}"
     )
-    # The label phrase carries the city-level percentage, which
-    # compile_spatial_map_info substitutes into phrases before figures are
-    # generated (mirroring the open space page); fall back to the raw
-    # configured label where the phrase is not yet available for a language.
-    health_label = phrases.get(
-        'Percentage of population with access to health services within 400 m',
-    ) or health_figures['pct_access_400m_health_services_score']['label']
-    template['pct_access_400m_health_services_score_label'] = health_label
-    template['health_header'] = 'Health services'
-    template['health_description'] = (
-        'Accessibility of the population to health services (hospitals, '
-        'clinics, doctors, dentists, pharmacies and allied health) within '
-        '400 m of the pedestrian network.'
-    )
-    template.render()
+
+
+def _indicator_label(r, phrases, key):
+    """Caption for an indicator page, carrying its city-level percentage where
+    applicable (which compile_spatial_map_info substitutes into the phrase)."""
+    report = r.config['pdf']['indicators']['report']
+    if key in report['spatial_distribution_figures']:
+        label = report['spatial_distribution_figures'][key]['label'].format(
+            **phrases,
+        )
+    else:
+        label = key
+    return phrases.get(label, label).replace('\n', ' ').replace('  ', ' ')
+
+
+def _pdf_insert_indicator_pages(pdf, pages, phrases, r):
+    """Add and render one page per age-friendly indicator, in a fixed order."""
+    if 'spatial' not in r.config['pdf']['report_template']:
+        return pdf
+    for page, header, description, key, kind in AGE_FRIENDLY_INDICATOR_PAGES:
+        if f'{page}' not in pages:
+            continue
+        figure = _indicator_figure_path(r, key, kind)
+        if figure is None or not os.path.exists(figure):
+            print(
+                f"  Indicator page '{header}' skipped: its map has not been "
+                'generated for this study region.',
+            )
+            continue
+        template = FlexTemplate(pdf, elements=pages[f'{page}'])
+        pdf.add_page()
+        if 'indicator_header' in template:
+            template['indicator_header'] = header
+        if 'indicator_description' in template:
+            template['indicator_description'] = description
+        if kind == 'threshold':
+            # The threshold page layout supplies its own map, percentile labels
+            # and caption, derived from the configured threshold criteria.
+            template = _pdf_add_threshold_plots(template, r, phrases)
+        elif kind == 'accessibility':
+            # The walkability page layout supplies its own map and caption,
+            # derived from the configured walkability reference.
+            template = _pdf_add_spatial_accessibility_plots(
+                template,
+                r,
+                phrases,
+            )
+        else:
+            template['indicator_map'] = figure
+            template['indicator_label'] = _indicator_label(r, phrases, key)
+        template.render()
     return pdf
 
 
@@ -3147,8 +3251,9 @@ def _pdf_insert_nature_based_solutions(pdf, pages, phrases, r):
         template.render()
     if '_ee' not in r.config['pdf']['report_template'] or not r.config['gee']:
         return pdf
-    # Optional Earth Engine pages: overall greenery, then accessibility to
-    # public urban green space
+    # Optional Earth Engine page: overall greenery (vegetation cover).  Access
+    # to public green space is reported as one of the age-friendly indicator
+    # pages instead.
     if r.config['pdf']['report_template'] == 'policy_spatial_ee':
         template = FlexTemplate(pdf, elements=pages['19'])
     pdf.add_page()
@@ -3167,32 +3272,7 @@ def _pdf_insert_nature_based_solutions(pdf, pages, phrases, r):
             ),
             r.config['pdf']['locale'],
         ),
-    )
-    template.render()
-    if r.config['pdf']['report_template'] == 'policy_spatial_ee':
-        template = FlexTemplate(pdf, elements=pages['20'])
-    elif r.config['pdf']['report_template'] == 'spatial_ee':
-        template = FlexTemplate(pdf, elements=pages['14'])
-    pdf.add_page()
-    template['green_space_accessibility'] = (
-        f"{r.config['pdf']['figure_path']}/green_space_accessibility_{r.config['pdf']['locale']}_no_label.jpg"
-    )
-    green_space_accessibility_label = (
-        phrases['green_space_accessibility_label']
-        .replace('\n', ' ')
-        .replace('  ', ' ')
-    )
-    template['green_space_accessibility_label'] = (
-        green_space_accessibility_label.format(
-            percent=_pct(
-                fnum(
-                    r.config['ee']['green_space_accessibility']['percent'],
-                    '0.0',
-                    r.config['pdf']['locale'],
-                ),
-                r.config['pdf']['locale'],
-            ),
-        )
+        city_name=phrases['city_name'],
     )
     template.render()
     return pdf
@@ -3604,16 +3684,21 @@ def generate_pdf(
     pdf = _pdf_insert_introduction_page(pdf, pages, phrases, r)
     pdf = _pdf_insert_context_page(pdf, pages, phrases, r)
     pdf = _pdf_insert_policy_scoring_page(pdf, pages, phrases, r)
-    pdf = _pdf_insert_25_city_study_box(pdf, pages, phrases, r)
+    # The spatial report moves straight from the study region context page to
+    # the indicator pages.  The 25-city comparison blurb, the walkability
+    # narrative pages and the two threshold charts belong to the policy
+    # reports, so they are not inserted for the spatial templates.
+    if not r.config['pdf']['report_template'].startswith('spatial'):
+        pdf = _pdf_insert_25_city_study_box(pdf, pages, phrases, r)
     pdf = _pdf_insert_policy_integrated_planning_page(pdf, pages, phrases, r)
     pdf = _pdf_insert_accessibility_policy(pdf, pages, phrases, r)
-    pdf = _pdf_insert_accessibility_spatial(pdf, pages, phrases, r)
-    pdf = _pdf_insert_thresholds_page(pdf, pages, phrases, r)
+    if not r.config['pdf']['report_template'].startswith('spatial'):
+        pdf = _pdf_insert_accessibility_spatial(pdf, pages, phrases, r)
+        pdf = _pdf_insert_thresholds_page(pdf, pages, phrases, r)
     pdf = _pdf_insert_transport_policy_page(pdf, pages, phrases, r)
-    pdf = _pdf_insert_transport_spatial_page(pdf, pages, phrases, r)
     pdf = _pdf_insert_open_space_policy_page(pdf, pages, phrases, r)
-    pdf = _pdf_insert_open_space_spatial_page(pdf, pages, phrases, r)
-    pdf = _pdf_insert_health_services_spatial_page(pdf, pages, phrases, r)
+    # One page per age-friendly indicator, in the configured order
+    pdf = _pdf_insert_indicator_pages(pdf, pages, phrases, r)
     pdf = _pdf_insert_nature_based_solutions(pdf, pages, phrases, r)
     pdf = _pdf_insert_climate_change_risk_reduction(pdf, pages, phrases, r)
     pdf = _pdf_insert_back_page(pdf, pages, phrases, r)

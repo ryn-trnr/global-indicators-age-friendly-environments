@@ -30,6 +30,8 @@ def export_indicators(r, gpkg=True, csv=True):
         'dest_type',
         'destinations',
         'pt_stops_headway',
+        'pt_stops_health_transit',
+        'pt_stops_community_facilities_transit',
         'aos_public_any_nodes_30m_line',
         'aos_public_large_nodes_30m_line',
         r.config['intersections_table'],

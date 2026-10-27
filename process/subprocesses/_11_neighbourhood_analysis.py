@@ -41,6 +41,7 @@ from setup_sp import (
     neighbourhood_reachable_nodes,
     spatial_join_index_to_gdf,
 )
+from sqlalchemy import text
 from tqdm import tqdm
 
 # Hard coded density variable names
@@ -451,6 +452,429 @@ def calculate_poi_accessibility(r, engine=None):
     return nodes_poi_dist
 
 
+# Average daytime weekday service frequency (minutes) at a public transport
+# stop for it to be considered usable in the age-friendly transport indicators.
+FREQUENT_PT_HEADWAY = 20
+
+# Default condition identifying low-stress ('safe') walking links for the
+# 'safe routes to public transport' indicator, evaluated against the network
+# edges.  Only links whose recorded width is at least 1.5 m are traversed;
+# links without a recorded width are excluded.  Overridable per study region
+# via the 'safe_walking_edges' setting under 'network' in its configuration.
+DEFAULT_SAFE_WALKING_EDGES = (
+    "highway IN ('footway','path','pedestrian','living_street','residential')"
+    " AND COALESCE(NULLIF(substring(width::text from '[0-9]+[.]?[0-9]*'), '')"
+    '::numeric, 0) >= 1.5'
+)
+
+
+def _node_index(r):
+    """Ordered index of network node osmids, matching nodes_poi_dist."""
+    return pd.Index(
+        r.get_df('SELECT osmid FROM nodes ORDER BY osmid')['osmid'].to_numpy(
+            dtype='int64',
+        ),
+        name='osmid',
+    )
+
+
+def _empty_node_measure(node_index, column):
+    """Null result for a node-level measure that could not be calculated."""
+    return pd.Series(np.nan, index=node_index, name=column, dtype='Int64')
+
+
+def _normalised_ids(values):
+    """Stringify stop/route identifiers, dropping any float-style '.0' suffix,
+    so identifiers match between the headway and route-stop tables however
+    they were inferred by pandas when written to the database."""
+    return pd.Series(
+        [
+            value[:-2]
+            if str(value).strip().endswith('.0')
+            else str(value).strip()
+            for value in values
+        ],
+        index=getattr(values, 'index', None),
+    )
+
+
+def _nearest_node_distance_to_layer(
+    r,
+    layer,
+    output_name,
+    distance,
+    node_index,
+    engine,
+    edge_where=None,
+    dest_filter_field=None,
+    dest_filter_iterations=None,
+):
+    """Distance from every network node to the nearest destination in a layer.
+
+    A thin wrapper over the two routing engines used elsewhere in this module,
+    returning a single ``sp_nearest_node_<output_name>`` Series (null where no
+    destination is reachable within ``distance``).  ``edge_where`` optionally
+    restricts routing to a subgraph of edges (for example the low-stress
+    walking network).
+    """
+    column = f'sp_nearest_node_{output_name}'
+    if engine == 'inmemory':
+        plan = nearest_poi_query_columns(
+            filter_field=dest_filter_field,
+            filter_iterations=dest_filter_iterations,
+            output_names=[output_name],
+            output_prefix='sp_nearest_node_',
+        )
+        distances = cal_dist_nodes_to_nearest_pois_inmemory(
+            r,
+            [(layer, col_name, where_clause) for col_name, where_clause in plan],
+            distance,
+            node_index,
+            where=edge_where,
+        )
+    else:
+        build_dest_node_lookup(r, {layer}, distance, where=edge_where)
+        try:
+            distances = cal_dist_node_to_nearest_pois(
+                r,
+                layer,
+                node_index=node_index,
+                filter_field=dest_filter_field,
+                filter_iterations=dest_filter_iterations,
+                output_names=[output_name],
+                output_prefix='sp_nearest_node_',
+            )
+        finally:
+            drop_dest_node_lookup(r)
+    return (
+        round(distances[column], 0).replace(-999, np.nan).astype('Int64')
+    )
+
+
+def calculate_transit_destination_access(
+    r,
+    nodes_poi_dist,
+    engine,
+    distance,
+    destination_column,
+    output_name,
+    label,
+    singular_label,
+    destination_label,
+    stops_table,
+):
+    """Access to a destination category by public transport.
+
+    Identifies frequent public transport stops from which a stop within
+    walking distance of a destination is served by the same route (a
+    direct service, with no interchange).  The network distance from every
+    node to the nearest such stop is then measured along the pedestrian
+    network, so sample points within the walking distance threshold of such a
+    stop are attributed public transport access to that destination category.
+
+    ``destination_column`` is the node-level walking distance to the
+    destination category, ``output_name`` names the resulting
+    ``sp_nearest_node_`` column, and ``label``/``singular_label``/
+    ``destination_label`` are used in progress messages.
+    """
+    column = f'sp_nearest_node_{output_name}'
+    node_index = nodes_poi_dist.index
+    if (
+        'pt_stops_headway' not in r.tables
+        or 'pt_route_stops' not in r.tables
+    ):
+        print(
+            f'  Public transport access to {label} skipped: public '
+            'transport route-stop membership is not available for this study '
+            'region.',
+        )
+        return _empty_node_measure(node_index, column)
+    if destination_column not in nodes_poi_dist.columns:
+        print(
+            f'  Public transport access to {label} skipped: '
+            f'{destination_label} destinations are not configured for this '
+            'study region.',
+        )
+        return _empty_node_measure(node_index, column)
+
+    stops = r.get_gdf('pt_stops_headway')
+    stops['stop_id'] = _normalised_ids(stops['stop_id'])
+    destination_distance = nodes_poi_dist[destination_column]
+
+    def _stop_destination_distance(stop):
+        # network walking distance from the stop to its nearest destination
+        measures = []
+        for node_col, offset_col in (
+            ('n1', 'n1_distance'),
+            ('n2', 'n2_distance'),
+        ):
+            node = stop.get(node_col)
+            if node is None or pd.isna(node):
+                continue
+            node_distance = destination_distance.get(int(node))
+            if node_distance is None or pd.isna(node_distance):
+                continue
+            offset = stop.get(offset_col)
+            measures.append(
+                float(node_distance)
+                + (0.0 if offset is None or pd.isna(offset) else float(offset)),
+            )
+        return min(measures) if measures else np.nan
+
+    stops['_destination_distance'] = stops.apply(
+        _stop_destination_distance,
+        axis=1,
+    )
+    destination_adjacent_stops = set(
+        stops.loc[stops['_destination_distance'] <= distance, 'stop_id'],
+    )
+
+    route_stops = r.get_df('SELECT route_id, stop_id FROM pt_route_stops')
+    if route_stops is None or route_stops.empty:
+        print(
+            f'  Public transport access to {label} skipped: no '
+            'route-stop membership records found.',
+        )
+        return _empty_node_measure(node_index, column)
+    route_stops['stop_id'] = _normalised_ids(route_stops['stop_id'])
+    route_stops['route_id'] = _normalised_ids(route_stops['route_id'])
+
+    # Routes serving at least one destination-adjacent stop ...
+    destination_routes = set(
+        route_stops.loc[
+            route_stops['stop_id'].isin(destination_adjacent_stops),
+            'route_id',
+        ],
+    )
+    # ... and the frequent stops that those routes also serve.  A passenger can
+    # travel between any two stops on the same route without interchanging.
+    frequent_stops = stops.loc[
+        stops['headway'].notna() & (stops['headway'] <= FREQUENT_PT_HEADWAY),
+        'stop_id',
+    ]
+    access_stops = frequent_stops[
+        frequent_stops.isin(
+            set(
+                route_stops.loc[
+                    route_stops['route_id'].isin(destination_routes),
+                    'stop_id',
+                ],
+            ),
+        )
+    ]
+    print(
+        f'  Transport access to {label}: {len(access_stops)} of '
+        f'{len(frequent_stops)} frequent public transport stops provide a '
+        f'direct service to within walking distance of {singular_label}.',
+    )
+    if access_stops.empty:
+        return _empty_node_measure(node_index, column)
+
+    access_gdf = stops[stops['stop_id'].isin(set(access_stops))].copy()
+    with r.engine.begin() as connection:
+        connection.execute(
+            text(f'DROP TABLE IF EXISTS {stops_table}'),
+        )
+        access_gdf.to_postgis(
+            stops_table,
+            connection,
+            index=False,
+        )
+    r.add_nearest_node_associations(stops_table)
+    return _nearest_node_distance_to_layer(
+        r,
+        stops_table,
+        output_name,
+        distance,
+        node_index,
+        engine,
+    )
+
+
+def calculate_transit_health_services_access(
+    r,
+    nodes_poi_dist,
+    engine,
+    distance,
+):
+    """Access to health services by public transport."""
+    return calculate_transit_destination_access(
+        r,
+        nodes_poi_dist,
+        engine,
+        distance,
+        destination_column='sp_nearest_node_health_services',
+        output_name='pt_transit_health_services',
+        label='health services',
+        singular_label='a health service',
+        destination_label='health service',
+        stops_table='pt_stops_health_transit',
+    )
+
+
+def _safe_walking_predicate(r):
+    """Configured condition identifying low-stress walking links, or None when
+    it cannot be evaluated for this study region (no network width attribute)."""
+    network_config = r.config.get('network') or {}
+    predicate = (
+        network_config.get('safe_walking_edges') or DEFAULT_SAFE_WALKING_EDGES
+    )
+    if 'width' in predicate.lower():
+        edge_columns = set(
+            r.get_df(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'edges'",
+            )['column_name'],
+        )
+        if 'width' not in edge_columns:
+            print(
+                '  Safe walking indicators skipped: the network edges have no '
+                'footpath width attribute.  Re-run the network creation step '
+                'to retain OSM width tags.',
+            )
+            return None
+    try:
+        safe_links = r.get_df(
+            f'SELECT COUNT(*) AS n FROM edges WHERE {predicate}',
+        )['n'][0]
+        print(
+            f'  Safe walking network: {safe_links} low-stress links satisfy '
+            'the configured safe walking condition.',
+        )
+    except Exception as error:
+        print(
+            f'  Safe walking indicators: could not evaluate the safe walking '
+            f'condition ({error}).',
+        )
+    return predicate
+
+
+def calculate_safe_walking_access(r, engine, distance):
+    """Walking access along low-stress ('safe') routes.
+
+    An iteration of the frequent public transport and daily living access
+    indicators, routed only over links considered safe for an older person to
+    walk along, as defined by the configured condition on footpath width (see
+    ``DEFAULT_SAFE_WALKING_EDGES`` and the region's ``network`` settings).
+
+    Returns the network distance from every node to the nearest frequent public
+    transport stop, and to the nearest fresh food market, convenience store and
+    public transport stop (the daily living destinations).
+    """
+    columns = [
+        'sp_nearest_node_pt_safe_freq_20',
+        'sp_nearest_node_safe_fresh_food_market',
+        'sp_nearest_node_safe_convenience',
+        'sp_nearest_node_safe_pt_any',
+    ]
+    node_index = _node_index(r)
+    predicate = _safe_walking_predicate(r)
+    if predicate is None:
+        return pd.DataFrame(
+            np.nan,
+            index=node_index,
+            columns=columns,
+            dtype='Int64',
+        )
+    layer_plans = {}
+    if 'pt_stops_headway' in r.tables:
+        layer_plans['pt_stops_headway'] = nearest_poi_query_columns(
+            filter_field='headway',
+            filter_iterations=[f'<={FREQUENT_PT_HEADWAY}'],
+            output_names=['pt_safe_freq_20'],
+            output_prefix='sp_nearest_node_',
+        )
+    if 'destinations' in r.tables:
+        layer_plans['destinations'] = nearest_poi_query_columns(
+            category_field='dest_name',
+            categories=['fresh_food_market', 'convenience', 'pt_any'],
+            output_names=[
+                'safe_fresh_food_market',
+                'safe_convenience',
+                'safe_pt_any',
+            ],
+            output_prefix='sp_nearest_node_',
+        )
+    if not layer_plans:
+        print(
+            '  Safe walking indicators skipped: no destination layers are '
+            'available for this study region.',
+        )
+        return pd.DataFrame(
+            np.nan,
+            index=node_index,
+            columns=columns,
+            dtype='Int64',
+        )
+    if engine == 'inmemory':
+        plan = [
+            (layer, col_name, where_clause)
+            for layer, entries in layer_plans.items()
+            for col_name, where_clause in entries
+        ]
+        distances = cal_dist_nodes_to_nearest_pois_inmemory(
+            r,
+            plan,
+            distance,
+            node_index,
+            where=predicate,
+        )
+    else:
+        build_dest_node_lookup(
+            r,
+            set(layer_plans),
+            distance,
+            where=predicate,
+        )
+        try:
+            parts = []
+            for layer, entries in layer_plans.items():
+                options = {}
+                if layer == 'pt_stops_headway':
+                    options = {
+                        'filter_field': 'headway',
+                        'filter_iterations': [f'<={FREQUENT_PT_HEADWAY}'],
+                        'output_names': ['pt_safe_freq_20'],
+                    }
+                else:
+                    options = {
+                        'category_field': 'dest_name',
+                        'categories': [
+                            'fresh_food_market',
+                            'convenience',
+                            'pt_any',
+                        ],
+                        'output_names': [
+                            'safe_fresh_food_market',
+                            'safe_convenience',
+                            'safe_pt_any',
+                        ],
+                    }
+                parts.append(
+                    cal_dist_node_to_nearest_pois(
+                        r,
+                        layer,
+                        node_index=node_index,
+                        output_prefix='sp_nearest_node_',
+                        **options,
+                    ),
+                )
+            distances = pd.concat(parts, axis=1)
+        finally:
+            drop_dest_node_lookup(r)
+    result = pd.DataFrame(index=node_index)
+    for column in columns:
+        if column in distances.columns:
+            result[column] = (
+                round(distances[column], 0)
+                .replace(-999, np.nan)
+                .astype('Int64')
+            )
+        else:
+            result[column] = pd.Series(np.nan, index=node_index, dtype='Int64')
+    return result
+
+
 def calculate_sample_point_access_scores(
     r,
     nodes_simple,
@@ -651,14 +1075,56 @@ def neighbourhood_analysis(codename):
         nodes,
         ghsci.settings['network_analysis']['neighbourhood_distance'],
     )
-    nodes_poi_dist = calculate_poi_accessibility(r)
+    accessibility_distance = ghsci.settings['network_analysis'][
+        'accessibility_distance'
+    ]
+    routing_engine = pedestrian_routing_engine(r)
+    nodes_poi_dist = calculate_poi_accessibility(r, engine=routing_engine)
+    # Age-friendly public transport indicators, which re-use the walking
+    # network measures above:
+    #   - public transport access to health services (walk to a frequent stop,
+    #     direct service to a stop near a health service, walk to the health
+    #     service);
+    #   - public transport access to community and social facilities (the same
+    #     composite, applied to the community facilities destination category);
+    #   - safe routes to public transport (as the frequent public transport
+    #     indicator, but routed only over low-stress walking links).
+    nodes_poi_dist = nodes_poi_dist.join(
+        calculate_transit_health_services_access(
+            r,
+            nodes_poi_dist,
+            routing_engine,
+            accessibility_distance,
+        ),
+    )
+    nodes_poi_dist = nodes_poi_dist.join(
+        calculate_transit_destination_access(
+            r,
+            nodes_poi_dist,
+            routing_engine,
+            accessibility_distance,
+            destination_column='sp_nearest_node_community_facilities',
+            output_name='pt_transit_community_facilities',
+            label='community and social facilities',
+            singular_label='a community and social facility',
+            destination_label='community and social facility',
+            stops_table='pt_stops_community_facilities_transit',
+        ),
+    )
+    nodes_poi_dist = nodes_poi_dist.join(
+        calculate_safe_walking_access(
+            r,
+            routing_engine,
+            accessibility_distance,
+        ),
+    )
 
     sample_points = calculate_sample_point_access_scores(
         r,
         nodes_simple,
         nodes_poi_dist,
         density_statistics,
-        ghsci.settings['network_analysis']['accessibility_distance'],
+        accessibility_distance,
     )
 
     sample_points = calculate_sample_point_indicators(r, sample_points)

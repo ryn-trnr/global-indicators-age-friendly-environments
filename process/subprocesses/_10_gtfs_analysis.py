@@ -284,6 +284,9 @@ def gtfs_analysis(codename):
             sys.exit('GTFS feeds not specified')
 
         stop_frequent = pd.DataFrame()
+        # route_id -> stop_id membership, used to identify stops served by the
+        # same route (direct public transport access without an interchange)
+        route_stops_frames = []
         print(
             '\nCommencing GTFS analysis.  GTFS analysis can be complex.  For details on expected data structures, including default route type codes, consult the GTFS Schedule Reference (https://gtfs.org/schedule/reference/).  Correct identification of transport modes may require custom configuration if GTFS feeds do not match the standard route_type codes defined in routes.txt.  Analysis will only be undertaken for stops aligned with trips in stop_times.txt, allowing mode of transport to be identified.  Service frequency analysis will only be undertaken for stops with scheduled services.  Where stop times are not defined but a stop sequence is defined, interpolation of stop times may be configured to support service frequency analysis.',
         )
@@ -301,6 +304,20 @@ def gtfs_analysis(codename):
             loaded_feeds = load_gtfs_feed(r, gtfs_feed, gtfsfeed_path)
             if loaded_feeds is None:
                 pass
+            else:
+                # retain which stops each route serves, for the 'transport
+                # access to health services' indicator
+                route_stops_frames.append(
+                    loaded_feeds.stop_times[['trip_id', 'stop_id']]
+                    .merge(
+                        loaded_feeds.trips[['trip_id', 'route_id']],
+                        how='left',
+                        on='trip_id',
+                    )[['route_id', 'stop_id']]
+                    .dropna()
+                    .drop_duplicates()
+                    .assign(feed=gtfs_feed),
+                )
             all_stops_in_feed = loaded_feeds.stops['stop_id'].nunique()
             print(
                 f'  - analysis dates: {start_date} to {end_date}\n'
@@ -380,6 +397,24 @@ def gtfs_analysis(codename):
                 print(
                     f'\n  - {stops_without_mode} stops in this feed were not aligned with a transport mode.  If GTFS feed uses non-standard route_types or agency_ids to identify transport modes, these can be defined in the region configuration file GTFS section.',
                 )
+
+        if route_stops_frames:
+            route_stops = pd.concat(route_stops_frames, ignore_index=True)
+            route_stops = route_stops.drop_duplicates(['route_id', 'stop_id'])
+            with r.engine.begin() as connection:
+                connection.execute(
+                    text('DROP TABLE IF EXISTS pt_route_stops'),
+                )
+                route_stops.to_sql(
+                    'pt_route_stops',
+                    con=connection,
+                    index=False,
+                )
+            print(
+                f'\nPublic transport route-stop membership exported to SQL '
+                f'database as pt_route_stops ({len(route_stops)} route-stop '
+                f'pairs)',
+            )
 
         if len(stop_frequent) > 0:
             mode_freq_comparison = get_frequent_stop_stats(

@@ -528,6 +528,37 @@ DESTINATION_PHRASES = {
         'a public transport stop with average daytime weekday service '
         'frequency of 20 minutes or better (source: GTFS)'
     ),
+    'pt_transit_health_services': (
+        'health services by public transport: a walk to a frequent public '
+        'transport stop, a direct service (no interchange) to a stop within '
+        'walking distance of a health service, and a walk to that health '
+        'service'
+    ),
+    'community_facilities': (
+        'community and social facilities (community centre, garden, library, '
+        'public toilet, arts centre, museum, gym or outdoor gym; source: '
+        'OpenStreetMap or custom data)'
+    ),
+    'pt_transit_community_facilities': (
+        'community and social facilities by public transport: a walk to a '
+        'frequent public transport stop, a direct service (no interchange) to '
+        'a stop within walking distance of a facility, and a walk to that '
+        'facility'
+    ),
+    'pt_safe_freq_20': (
+        'frequent public transport (average daytime weekday service frequency '
+        'of 20 minutes or better), reached along low-stress walking links of '
+        'at least 1.5 metres width'
+    ),
+    'daily_living_all': (
+        'all daily living destinations (fresh food market or supermarket, '
+        'convenience store and public transport)'
+    ),
+    'safe_daily_living_all': (
+        'all daily living destinations (fresh food market or supermarket, '
+        'convenience store and public transport), reached along low-stress '
+        'walking links of at least 1.5 metres width'
+    ),
     'pt_any': (
         'any public transport stop (best result of GTFS and '
         'OpenStreetMap/custom sources)'

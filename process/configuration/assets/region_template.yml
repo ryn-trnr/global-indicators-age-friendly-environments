@@ -338,6 +338,14 @@ network:
   ## For example, 12
   intersection_tolerance:
   #########
+  ## Low-stress ('safe') walking network for the 'safe routes to public
+  ## transport' indicator.  An SQL condition evaluated against the network
+  ## edges; only links satisfying it are traversed when measuring walking
+  ## access to frequent public transport stops.  Links with no width recorded
+  ## in OpenStreetMap are excluded.  Uncomment and edit to change the width
+  ## threshold (default 1.5 metres) or the walking link types included.
+  # safe_walking_edges: "highway IN ('footway','path','pedestrian','living_street','residential') AND COALESCE(NULLIF(substring(width::text from '[0-9]+[.]?[0-9]*'), '')::numeric, 0) >= 1.5"
+  #########
   ## Optionally, data for evaluating intersections can be provided as an
   ## alternative to deriving intersections from OpenStreetMap.
   ## Where such data are available, this may be preferable.

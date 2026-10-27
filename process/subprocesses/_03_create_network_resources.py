@@ -37,6 +37,12 @@ def osmnx_configuration(r):
         'cycleway:right',
         'maxspeed',
         'motor_vehicle',
+        # Footpath width attributes, used to identify low-stress walking links
+        # suitable for older people (see the 'safe walking routes' indicator)
+        'width',
+        'est_width',
+        'footway',
+        'footway:width',
     ]
     # set OSMnx to retrieve filtered network to match OpenStreetMap publication date
     osm_publication_date = f"""[date:"{datetime.strptime(str(r.config['OpenStreetMap']['publication_date']), '%Y%m%d').strftime('%Y-%m-%d')}T00:00:00Z"]"""
@@ -122,6 +128,10 @@ def generate_network_nodes_edges(r):
                 'cycleway:right',
                 'maxspeed',
                 'motor_vehicle',
+                'width',
+                'est_width',
+                'footway',
+                'footway:width',
             ]
         }
         capture_output = [

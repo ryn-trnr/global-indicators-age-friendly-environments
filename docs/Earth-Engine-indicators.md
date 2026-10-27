@@ -79,6 +79,8 @@ These combine into the overall `urban_heat_guhvi`.  It is also reported as a fiv
 
 Each sub-index and sub-indicator is reported alongside the overall index, at the sample point, grid and city scales, following the same naming conventions as the core indicators: `sp_` prefixed at sample points, unprefixed at the grid scale, and `pop_` prefixed for population weighted city estimates.
 
+Land surface temperature and albedo are composited over the hottest third of the year in the target year and the four preceding years.  Landsat 7, 8 and 9 observations are pooled wherever the missions cover a seasonal window, so that their combined revisit frequency maximises the number of clear observations.  Landsat 7 is included up to its Earth Engine archive end date of January 2024.  This reduces gaps caused by cloud cover or sparse satellite coverage in any single year or from a single mission.
+
 The methods follow Turner et al. (2025), *Urban Climate* 64:102716.  Note that the urban heat indicators are estimated on a 1 km grid, which is coarser than the population grid typically used for the core indicators.
 
 The full list of variable names is in `configuration/indicators-ee.yml`, and descriptions of the green space indicators are in the reference data dictionary at `configuration/assets/output_data_dictionary.csv`.

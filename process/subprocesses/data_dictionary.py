@@ -626,8 +626,9 @@ URBAN_HEAT_PHRASES = {
     ),
     'land_surface_temp_c': (
         'Land surface temperature (°C): the temperature of the Earth’s '
-        'surface, indicating the lived experience of heat (Landsat 8 '
-        'surface reflectance, hottest third of the year)'
+        'surface, indicating the lived experience of heat (Landsat 7/8/9 '
+        'surface reflectance; hottest third of the year composited over '
+        'the target year and four preceding years)'
     ),
     'sensitivity_index': (
         'Heat Sensitivity Index (HSI): the equally weighted heat '
@@ -1576,13 +1577,18 @@ CATEGORY_NOTES = {
         'Derived from Earth Engine raster analyses on a 1 km grid by '
         'default, following Turner et al. (2025), "Development and '
         'validation of the Global Urban Heat Vulnerability Index '
-        '(GUHVI)", Urban Climate 64: 102716.  Inputs are aligned so '
-        'that higher values indicate greater heat vulnerability.  Each '
-        'measure below is sampled at sample points (sp_ prefix), '
-        'averaged for each grid cell or custom area (no prefix), and '
-        'population weighted for the city and custom areas (pop_ '
-        'prefix).  Sub-indicators are listed beneath the composite '
-        'index they contribute to.'
+        '(GUHVI)", Urban Climate 64: 102716.  Land surface temperature '
+        'and albedo are composited over the hottest third of the year '
+        'in the target year and the four preceding years, combining '
+        'Landsat 7, 8 and 9 observations wherever the missions cover '
+        'the seasonal windows; Landsat 7 is included up to its Earth '
+        'Engine archive end date of January 2024.  Inputs are aligned '
+        'so that higher values indicate '
+        'greater heat vulnerability.  Each measure below is sampled at '
+        'sample points (sp_ prefix), averaged for each grid cell or '
+        'custom area (no prefix), and population weighted for the city '
+        'and custom areas (pop_ prefix).  Sub-indicators are listed '
+        'beneath the composite index they contribute to.'
     ),
     LONGITUDINAL: 'Work in progress (July 2026)',
 }

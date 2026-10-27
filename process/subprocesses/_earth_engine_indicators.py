@@ -12,6 +12,7 @@ import shutil
 import tempfile
 import time
 import warnings
+from datetime import datetime
 
 import ee
 import geemap
@@ -71,6 +72,139 @@ def clean_city_name_for_gee(city_name):
         cleaned = 'city'
 
     return cleaned
+
+
+def format_month_day(iso_date):
+    """Format an ISO date as a month name and ordinal day, e.g. 'June 1st'."""
+    date = datetime.strptime(iso_date, '%Y-%m-%d')
+    day = date.day
+    if 10 <= day % 100 <= 20:
+        suffix = 'th'
+    else:
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th')
+    return f'{date.strftime("%B")} {day}{suffix}'
+
+
+# Landsat missions used for the heat exposure inputs, in order of preference.
+# The newest mission whose operational period covers the entire five-year
+# composite is used, so that the surface temperature and albedo inputs come
+# from a single, radiometrically consistent sensor.  Landsat 9 data begin on
+# 31 October 2021; Landsat 8 data begin on 11 April 2013; Landsat 7 data span
+# late May 1999 to January 2024.
+LANDSAT_SENSORS = (
+    {
+        'name': 'Landsat 9',
+        'sr_collection': 'LANDSAT/LC09/C02/T1_L2',
+        'toa_collection': 'LANDSAT/LC09/C02/T1_TOA',
+        'available_from': '2021-10-31',
+        'available_to': None,
+        'thermal_band': 'ST_B10',
+        'albedo_bands': {
+            'blue': 'B2',
+            'red': 'B4',
+            'nir': 'B5',
+            'swir': 'B6',
+            'swir2': 'B7',
+        },
+    },
+    {
+        'name': 'Landsat 8',
+        'sr_collection': 'LANDSAT/LC08/C02/T1_L2',
+        'toa_collection': 'LANDSAT/LC08/C02/T1_TOA',
+        'available_from': '2013-04-11',
+        'available_to': None,
+        'thermal_band': 'ST_B10',
+        'albedo_bands': {
+            'blue': 'B2',
+            'red': 'B4',
+            'nir': 'B5',
+            'swir': 'B6',
+            'swir2': 'B7',
+        },
+    },
+    {
+        'name': 'Landsat 7',
+        'sr_collection': 'LANDSAT/LE07/C02/T1_L2',
+        'toa_collection': 'LANDSAT/LE07/C02/T1_TOA',
+        'available_from': '1999-05-28',
+        'available_to': '2024-01-19',
+        'thermal_band': 'ST_B6',
+        'albedo_bands': {
+            'blue': 'B1',
+            'red': 'B3',
+            'nir': 'B4',
+            'swir': 'B5',
+            'swir2': 'B7',
+        },
+    },
+)
+
+
+def select_landsat_sensors(date_ranges):
+    """Assign each seasonal window to every Landsat mission covering it.
+
+    Landsat 7, 8 and 9 observations are pooled wherever the missions cover a
+    window, maximising the number of clear observations in the five-year
+    composite.  Landsat 7 is included up to its Earth Engine archive end date
+    of 19 January 2024.
+
+    Parameters
+    ----------
+    date_ranges : list[tuple[str, str]]
+        The seasonal date ranges making up the composite, as ISO date strings.
+
+    Returns
+    -------
+    list[dict]
+        Entries of the form ``{'sensor': sensor, 'ranges': [(start, end)]}``.
+
+    Raises
+    ------
+    ValueError
+        If no Landsat 7, 8 or 9 data cover one or more of the windows.
+    """
+    assignments = {}
+    gaps = []
+
+    for start, end in date_ranges:
+        available = [
+            sensor
+            for sensor in LANDSAT_SENSORS
+            if sensor['available_from'] <= start
+            and (
+                sensor['available_to'] is None
+                or end <= sensor['available_to']
+            )
+        ]
+        if not available:
+            gaps.append((start, end))
+            continue
+        for sensor in available:
+            assignments.setdefault(
+                sensor['name'],
+                {'sensor': sensor, 'ranges': []},
+            )['ranges'].append((start, end))
+
+    if gaps:
+        missing = '; '.join(f'{start} to {end}' for start, end in gaps)
+        raise ValueError(
+            'No Landsat 7, 8 or 9 coverage for: '
+            f'{missing}. Choose a later target year.',
+        )
+
+    return list(assignments.values())
+
+
+def filter_date_ranges(collection, date_ranges):
+    """Filter an Earth Engine ImageCollection to one or more date ranges."""
+    return collection.filter(
+        ee.Filter.Or(
+            *[
+                ee.Filter.date(start, end)
+                for start, end in date_ranges
+            ],
+        ),
+    )
 
 
 def initialize_gee():
@@ -1307,19 +1441,67 @@ def guhvi_analysis(r):  # noqa: C901
 
         return start_date, end_date
 
-    # Get window start and end dates for hottest third of the year period
-    hottest_start_date, hottest_end_date = get_date_range_4_months(
-        max_month_with_neighbors,
-        target_year,
+    # Apply the hottest third of the year to the target year and the four
+    # preceding years.  Pooling the same seasonal window across five years
+    # greatly increases the number of clear Landsat/Sentinel observations and
+    # prevents a single cloudy year from determining the result.
+    hottest_years = list(range(target_year - 4, target_year + 1))
+    hottest_date_ranges = [
+        get_date_range_4_months(max_month_with_neighbors, year)
+        for year in hottest_years
+    ]
+    hottest_start_date = hottest_date_ranges[0][0]
+    hottest_end_date = hottest_date_ranges[-1][1]
+    hottest_years_label = (
+        f"{hottest_date_ranges[0][0][:4]}-"
+        f"{hottest_date_ranges[-1][0][:4]}"
+    )
+    hottest_window = (
+        f"{format_month_day(hottest_date_ranges[0][0])} to "
+        f"{format_month_day(hottest_date_ranges[0][1])}"
     )
     print(
-        f"Hottest Third of the Year: Start = {hottest_start_date}, End = {hottest_end_date}",
+        '\nHottest Third of the Year (five-year composite):\n'
+        + '\n'.join(
+            f'  - {start} to {end}'
+            for start, end in hottest_date_ranges
+        ),
+    )
+    print(
+        f'Hottest seasonal window: {hottest_window} '
+        f'({hottest_years_label}, five-year composite)',
     )
 
-    # LAND SURFACE TEMPERATURE (LST) - LANDSAT-8 SR
+    # Use Landsat 8 and Landsat 9 together wherever both cover a window, so
+    # that their combined revisit frequency maximises the number of clear
+    # observations in the composite.  Landsat 7 is used only for windows
+    # neither newer mission covers.
+    landsat_assignments = sorted(
+        select_landsat_sensors(hottest_date_ranges),
+        key=lambda assignment: assignment['sensor']['name'],
+    )
+    landsat_sensor_label = ' + '.join(
+        assignment['sensor']['name'] for assignment in landsat_assignments
+    )
+    print(f'\nLandsat sensors for heat exposure: {landsat_sensor_label}')
+    for assignment in landsat_assignments:
+        sensor = assignment['sensor']
+        print(
+            f'  - {sensor["name"]}: '
+            + ', '.join(
+                f'{start} to {end}'
+                for start, end in assignment['ranges']
+            ),
+        )
+    # LAND SURFACE TEMPERATURE (LST) - LANDSAT SR
 
-    # Function to mask clouds from Landsat 8 Collection 2, Level 2
-    def mask_landsat8_sr_clouds(image):
+    # Function to mask clouds from any Landsat Collection 2, Level 2 image.
+    # QA_PIXEL bits 0-4 (fill, dilated cloud, cirrus, cloud and cloud shadow)
+    # must all be clear, and QA_RADSAT must be zero (no saturated pixels).
+    # No separate cloud-confidence threshold is applied.  Band names and
+    # scaling are shared by Landsat 7, 8 and 9; only the thermal band name
+    # differs (ST_B6 for Landsat 7, ST_B10 for 8 and 9).
+    def mask_landsat_sr_clouds(image):
         qa_mask = image.select('QA_PIXEL').bitwiseAnd(int('11111', 2)).eq(0)
         saturation_mask = image.select('QA_RADSAT').eq(0)
 
@@ -1333,62 +1515,92 @@ def guhvi_analysis(r):  # noqa: C901
             .updateMask(saturation_mask)
         )
 
-    # Map the function over the hottest third of the year
-    landsat_sr_collection = (
-        ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
-        .filterDate(hottest_start_date, hottest_end_date)
-        .filterBounds(bounding_box_1600m)
-        .map(mask_landsat8_sr_clouds)
-    )
-
-    # Calculate LST
-    def calculate_lst(image):
-        st = image.select('ST_B10')
+    # Calculate LST, using the thermal band appropriate to the mission
+    def calculate_lst(image, thermal_band):
+        st = image.select(thermal_band)
         lst = st.subtract(273.15).rename('LST')
         return image.addBands(lst)
 
-    # Create a collection attributed with LST data
-    collection_with_lst = landsat_sr_collection.map(calculate_lst)
+    def landsat_lst_collection_for(assignment):
+        """Return LST images for one mission and its assigned windows."""
+        sensor = assignment['sensor']
+        collection = filter_date_ranges(
+            ee.ImageCollection(sensor['sr_collection']).filterBounds(
+                bounding_box_1600m,
+            ),
+            assignment['ranges'],
+        ).map(mask_landsat_sr_clouds)
+        return collection.map(
+            lambda image: calculate_lst(
+                image,
+                sensor['thermal_band'],
+            ),
+        ).select('LST')
 
-    # Calculate the overall average LST for the 12 monthly maximums
-    mean_lst = collection_with_lst.select('LST').mean()
+    # Build and merge the LST collections for all selected missions
+    lst_collections = [
+        landsat_lst_collection_for(assignment)
+        for assignment in landsat_assignments
+    ]
+    collection_with_lst = lst_collections[0]
+    for collection in lst_collections[1:]:
+        collection_with_lst = collection_with_lst.merge(collection)
+
+    # Calculate the mean LST across all scenes in the five seasonal windows
+    mean_lst = collection_with_lst.mean()
 
     # Clip the LST image to the cityBoundary
     lst_clipped = mean_lst.clip(urban_study_region_fc)
 
-    # LAND SURFACE ALBEDO (LSA) - LANDSAT-8 TOA
+    # LAND SURFACE ALBEDO (LSA) - LANDSAT TOA
 
-    # Define the mask Landsat function
-    def mask_landsat8_toa_clouds(image):
+    # Define the Landsat TOA cloud mask.  This uses only QA_PIXEL bit 3
+    # (cloud); it does not mask cloud shadow, cirrus or dilated cloud.
+    def mask_landsat_toa_clouds(image):
         qa = image.select('QA_PIXEL')
         mask = qa.bitwiseAnd(1 << 3).eq(0)
         return image.updateMask(mask)
 
-    # Define the albedo function
-    def albedo(image):
+    # Define the albedo function, mapping the band names used by the mission
+    def albedo(image, bands):
         alb = image.expression(
             '((0.356*blue)+(0.130*red)+(0.373*nir)+(0.085*swir)+(0.072*swir2)- 0.018)/ 1.016',
             {
-                'blue': image.select('B2'),
-                'red': image.select('B4'),
-                'nir': image.select('B5'),
-                'swir': image.select('B6'),
-                'swir2': image.select('B7'),
+                'blue': image.select(bands['blue']),
+                'red': image.select(bands['red']),
+                'nir': image.select(bands['nir']),
+                'swir': image.select(bands['swir']),
+                'swir2': image.select(bands['swir2']),
             },
         )
         return image.addBands(alb.rename('albedo'))
 
-    # Load Landsat 8 TOA collection, apply the albedo function, and filter by date and region
-    landsat_toa_collection = (
-        ee.ImageCollection('LANDSAT/LC08/C02/T1_TOA')
-        .filterDate(hottest_start_date, hottest_end_date)
-        .filterBounds(bounding_box_1600m)
-        .map(mask_landsat8_toa_clouds)
-        .map(albedo)
-    )
+    def landsat_albedo_collection_for(assignment):
+        """Return albedo images for one mission and its assigned windows."""
+        sensor = assignment['sensor']
+        collection = filter_date_ranges(
+            ee.ImageCollection(sensor['toa_collection']).filterBounds(
+                bounding_box_1600m,
+            ),
+            assignment['ranges'],
+        ).map(mask_landsat_toa_clouds)
+        return collection.map(
+            lambda image: albedo(image, sensor['albedo_bands']),
+        ).select('albedo')
 
-    # Select only the albedo band and calculate the mean
-    albedo_mean = landsat_toa_collection.select('albedo').mean()
+    # Build and merge the albedo collections for all selected missions
+    albedo_collections = [
+        landsat_albedo_collection_for(assignment)
+        for assignment in landsat_assignments
+    ]
+    landsat_albedo_collection = albedo_collections[0]
+    for collection in albedo_collections[1:]:
+        landsat_albedo_collection = landsat_albedo_collection.merge(
+            collection,
+        )
+
+    # Calculate the mean albedo across the merged mission collections
+    albedo_mean = landsat_albedo_collection.mean()
 
     # Clip to city
     lsa_clipped = albedo_mean.clip(urban_study_region_fc)
@@ -1412,14 +1624,16 @@ def guhvi_analysis(r):  # noqa: C901
             .copyProperties(image, ['system:time_start'])
         )
 
-    # Load Sentinel-2 SR data using dates for the hottest month of the year
-    sentinel_collection_hottest_period = (
+    # Load Sentinel-2 SR data for the five hottest-third seasonal windows.
+    # Scenes with CLOUDY_PIXEL_PERCENTAGE >= 90 are excluded, then QA60 bits
+    # 10 (opaque cloud) and 11 (cirrus) are masked.  Cloud shadow is not
+    # masked by QA60.
+    sentinel_collection_hottest_period = filter_date_ranges(
         ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
         .filterBounds(bounding_box_1600m)
-        .filterDate(hottest_start_date, hottest_end_date)
-        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 90))
-        .map(mask_s2_clouds)
-    )
+        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 90)),
+        hottest_date_ranges,
+    ).map(mask_s2_clouds)
 
     # Calculate NDVI
     def calculate_ndvi(image):
@@ -1506,16 +1720,12 @@ def guhvi_analysis(r):  # noqa: C901
 
     # Custom function to calculate percentage of vulnerable population and append it as a new attribute
     def add_percent_popv(image):
-        # Select relevant age groups of 4- and 65+ for both sexes
+        # Select the 65+ age groups for both sexes
         vulnerable_age_group = [
-            'M_0',
-            'M_1',
             'M_65',
             'M_70',
             'M_75',
             'M_80',
-            'F_0',
-            'F_1',
             'F_65',
             'F_70',
             'F_75',
@@ -1783,13 +1993,34 @@ def guhvi_analysis(r):  # noqa: C901
     # whereas the values the tables must reproduce are the mean of the finer
     # pixels within each cell (as reduceRegions previously computed).
     clean_city = clean_city_name_for_gee(r.config['name'])
+    sensor_slug = '_'.join(
+        assignment['sensor']['name'].replace(' ', '')
+        for assignment in landsat_assignments
+    )
     out_dir = os.path.join(r.config['region_dir'], 'guhvi_tiles')
     os.makedirs(out_dir, exist_ok=True)
     out_tif = os.path.join(
         out_dir,
         f'GHSCI_GUHVI_Raster_{clean_city}_{GUHVI_DOWNLOAD_SCALE}m_'
-        f'{target_year}.tif',
+        f'{target_year}_{sensor_slug}_hotseason'
+        f'{len(hottest_date_ranges)}yr.tif',
     )
+
+    # A raster downloaded by an earlier version of this analysis may hold a
+    # different set of bands; re-download when the band count does not match.
+    if os.path.exists(out_tif):
+        try:
+            with rasterio.open(out_tif) as src:
+                stale = src.count != len(raw_band_names)
+        except Exception:
+            stale = True
+        if stale:
+            print(
+                f'\nPreviously downloaded GUHVI raster '
+                f'{out_tif.replace("/home/ghsci/", "")} has an unexpected '
+                'band count; deleting and re-downloading...',
+            )
+            os.remove(out_tif)
 
     if os.path.exists(out_tif):
         print(
@@ -1816,8 +2047,16 @@ def guhvi_analysis(r):  # noqa: C901
 
     # Fetch the output grid once and convert it to a local metric GeoDataFrame
     # (its geometry and cell labels match the previous pipeline).
+    grid_features = grid.getInfo()['features']
+    if not grid_features:
+        print(
+            '\nWarning: no GUHVI grid cells were generated for this study '
+            'region, so GUHVI indicators will not be generated. Skipping '
+            'GUHVI analysis and continuing.',
+        )
+        return
     grid_gdf = gpd.GeoDataFrame.from_features(
-        grid.getInfo()['features'],
+        grid_features,
         crs='EPSG:4326',
     ).to_crs(crs_metric)
     grid_gdf['label'] = grid_gdf['label'].astype('int64')
@@ -1849,7 +2088,8 @@ def guhvi_analysis(r):  # noqa: C901
     # asset used previously.  The polygons are clipped to the buffered study
     # region server-side (a single ocean polygon would otherwise be downloaded
     # in full), then rasterised so the overlap is the fraction of each cell not
-    # covered by water.
+    # covered by water.  An inland study region may have no intersecting water
+    # polygons at all, in which case every cell is fully on land.
     water_polygons = (
         ee.FeatureCollection(
             'projects/ee-global-indicators/assets/GUHVI/'
@@ -1858,12 +2098,16 @@ def guhvi_analysis(r):  # noqa: C901
         .filterBounds(geometry_1600m)
         .map(lambda feature: feature.intersection(geometry_1600m, 1))
     )
-    water_gdf = gpd.GeoDataFrame.from_features(
-        water_polygons.getInfo()['features'],
-        crs='EPSG:4326',
-    )
-    if len(water_gdf) > 0:
-        water_gdf = water_gdf.to_crs(crs_metric)
+    water_features = [
+        feature
+        for feature in water_polygons.getInfo()['features']
+        if feature.get('geometry') is not None
+    ]
+    if water_features:
+        water_gdf = gpd.GeoDataFrame.from_features(
+            water_features,
+            crs='EPSG:4326',
+        ).to_crs(crs_metric)
     else:
         water_gdf = gpd.GeoDataFrame(geometry=[], crs=crs_metric)
     water_mask = rasterise_binary(
@@ -1942,30 +2186,34 @@ def guhvi_analysis(r):  # noqa: C901
         # Identify LCZ columns and final GUHVI_class which need to remain as whole numbers
         integer_columns = {'LCZ_Filter', 'remapped', 'GUHVI_class'}
         band_columns = [col for col in gdf.columns if col != 'geometry']
+        text_columns = set()
 
-        # Add hottest dates to LST table only
+        # Add the hottest period metadata to the LST table only
         if name == 'lst':
             gdf['hottest_start_date'] = hottest_start_date
             gdf['hottest_end_date'] = hottest_end_date
-            band_columns.extend(['hottest_start_date', 'hottest_end_date'])
+            gdf['hottest_years'] = hottest_years_label
+            gdf['hottest_window'] = hottest_window
+            gdf['landsat_sensor'] = landsat_sensor_label
+            text_columns = {
+                'hottest_start_date',
+                'hottest_end_date',
+                'hottest_years',
+                'hottest_window',
+                'landsat_sensor',
+            }
+            band_columns.extend(sorted(text_columns))
 
-            column_defs = [
-                (
-                    f"{col} INTEGER"
-                    if col in integer_columns
-                    else (
-                        f"{col} TEXT"
-                        if col in ['hottest_start_date', 'hottest_end_date']
-                        else f"{col} FLOAT"
-                    )
-                )
-                for col in band_columns
-            ]
-        else:
-            column_defs = [
-                f"{col} INTEGER" if col in integer_columns else f"{col} FLOAT"
-                for col in band_columns
-            ]
+        column_defs = [
+            (
+                f"{col} INTEGER"
+                if col in integer_columns
+                else f"{col} TEXT"
+                if col in text_columns
+                else f"{col} FLOAT"
+            )
+            for col in band_columns
+        ]
 
         # SQL to create table
         create_table_sql = f"""
@@ -1994,9 +2242,7 @@ def guhvi_analysis(r):  # noqa: C901
                         if col in integer_columns
                         else (
                             str(row[col])
-                            if name == 'lst'
-                            and col
-                            in ['hottest_start_date', 'hottest_end_date']
+                            if col in text_columns
                             else float(row[col])
                         )
                     )

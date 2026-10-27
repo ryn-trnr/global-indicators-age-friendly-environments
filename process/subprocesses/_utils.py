@@ -10,6 +10,7 @@ import re
 import subprocess as sp
 import time
 import unicodedata
+from datetime import datetime
 from textwrap import wrap
 
 import contextily as ctx
@@ -348,6 +349,11 @@ def generate_report_for_language(
                 language,
                 reporting_template=report_template,
             )
+            # Make the heat exposure composite years available to phrases
+            # formatted during figure and template preparation (e.g. the
+            # GUHVI percentage map label), before figures are generated.
+            phrases['hottest_years'] = get_heat_exposure_years(report_region)
+            phrases['hottest_window'] = get_heat_exposure_window(report_region)
             if 'spatial' in report_template:
                 # get data, indicators, policy review, phrases, font for reports
                 gdfs = {}
@@ -1754,6 +1760,62 @@ def get_temperature_unit_label(phrases):
     )
 
 
+def get_heat_exposure_years(r):
+    """Return the five-year composite label for the heat exposure inputs."""
+    exposure = (r.config.get('ee') or {}).get('heat_exposure') or {}
+    hottest_years = exposure.get('hottest_years')
+    if hottest_years:
+        return hottest_years
+    target_year = int(r.config['year'])
+    return f'{target_year - 4}-{target_year}'
+
+
+def _format_month_day(iso_date):
+    """Format an ISO date as a month name and ordinal day, e.g. 'June 1st'."""
+    date = datetime.strptime(iso_date, '%Y-%m-%d')
+    day = date.day
+    if 10 <= day % 100 <= 20:
+        suffix = 'th'
+    else:
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th')
+    return f'{date.strftime("%B")} {day}{suffix}'
+
+
+def get_heat_exposure_window(r):
+    """Return the seasonal month-day window for the heat exposure inputs."""
+    exposure = (r.config.get('ee') or {}).get('heat_exposure') or {}
+    hottest_window = exposure.get('hottest_window')
+    if hottest_window:
+        return hottest_window
+    start_date = exposure.get('start_date')
+    end_date = exposure.get('end_date')
+    if start_date and end_date:
+        return (
+            f'{_format_month_day(start_date)} to '
+            f'{_format_month_day(end_date)}'
+        )
+    # Before the heat maps are generated, these values live only in the
+    # database.  Read them from the LST table so figure labels and template
+    # captions can be prepared before the maps themselves are drawn.
+    try:
+        lst_gdf = r.get_gdf('guhvi_lst')
+    except Exception:
+        return ''
+    if len(lst_gdf):
+        row = lst_gdf.iloc[0]
+        hottest_window = row.get('hottest_window')
+        if hottest_window:
+            return hottest_window
+        start_date = row.get('hottest_start_date')
+        end_date = row.get('hottest_end_date')
+        if start_date and end_date:
+            return (
+                f'{_format_month_day(start_date)} to '
+                f'{_format_month_day(end_date)}'
+            )
+    return ''
+
+
 def ee_heat_exposure_map(
     r,
     gdf_boundary,
@@ -1783,11 +1845,21 @@ def ee_heat_exposure_map(
         lst_gdf.iloc[0]['hottest_start_date'],
         lst_gdf.iloc[0]['hottest_end_date'],
     )
+    hottest_years = lst_gdf.iloc[0].get('hottest_years')
+    hottest_window = lst_gdf.iloc[0].get('hottest_window')
     if 'ee' not in r.config:
         r.config['ee'] = {}
     r.config['ee']['heat_exposure'] = {}
     r.config['ee']['heat_exposure']['start_date'] = start_date
     r.config['ee']['heat_exposure']['end_date'] = end_date
+    r.config['ee']['heat_exposure']['hottest_years'] = (
+        hottest_years or get_heat_exposure_years(r)
+    )
+    r.config['ee']['heat_exposure']['hottest_window'] = (
+        hottest_window or get_heat_exposure_window(r)
+    )
+    hottest_years = r.config['ee']['heat_exposure']['hottest_years']
+    hottest_window = r.config['ee']['heat_exposure']['hottest_window']
     if os.path.exists(path):
         print(
             f'  figures/{os.path.basename(path)}; Already exists; Delete to re-generate.',
@@ -1919,6 +1991,9 @@ def ee_heat_exposure_map(
             phrases['land_surface_temperature_label'].format(
                 start_date=start_date,
                 end_date=end_date,
+                hottest_years=hottest_years,
+                hottest_window=hottest_window,
+                city_name=phrases['city_name'],
             ),
             ha='center',
             va='bottom',
@@ -1959,6 +2034,8 @@ def ee_heat_vulnerability_map(
         phrases = {'north arrow': 'N', 'km': 'km'}
 
     guhvi_gdf = r.get_gdf('guhvi_guhvi')
+    hottest_years = get_heat_exposure_years(r)
+    hottest_window = get_heat_exposure_window(r)
 
     # Use the population-weighted region estimate already computed during
     # aggregation (indicators_region) for consistency with other indicators
@@ -2103,6 +2180,9 @@ def ee_heat_vulnerability_map(
             0.02,
             phrases['global_urban_heat_vulnerability_index_label'].format(
                 percent=_pct(fnum(percentage, '0.0', locale), locale),
+                hottest_years=hottest_years,
+                hottest_window=hottest_window,
+                city_name=phrases['city_name'],
             ),
             ha='center',
             va='bottom',
@@ -3336,6 +3416,9 @@ def _pdf_insert_climate_change_risk_reduction(pdf, pages, phrases, r):
         land_surface_temperature_label.format(
             start_date=r.config['ee']['heat_exposure']['start_date'],
             end_date=r.config['ee']['heat_exposure']['end_date'],
+            hottest_years=get_heat_exposure_years(r),
+            hottest_window=get_heat_exposure_window(r),
+            city_name=phrases['city_name'],
         )
     )
     template.render()
@@ -3362,6 +3445,9 @@ def _pdf_insert_climate_change_risk_reduction(pdf, pages, phrases, r):
                 ),
                 r.config['pdf']['locale'],
             ),
+            hottest_years=get_heat_exposure_years(r),
+            hottest_window=get_heat_exposure_window(r),
+            city_name=phrases['city_name'],
         )
     )
     template.render()

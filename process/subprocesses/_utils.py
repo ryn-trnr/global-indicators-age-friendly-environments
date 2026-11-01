@@ -72,6 +72,45 @@ def get_terminal_columns():
     return shutil.get_terminal_size().columns
 
 
+DEFAULT_ACCESS_DISTANCE = 400
+GENTLE_NETWORK_SUFFIX = ' using the gentle access network'
+
+
+def _gentle_network_suffix(r):
+    """Caption/description suffix when the gentle network is in use."""
+    network = (r.config.get('network') if r is not None else None) or {}
+    return GENTLE_NETWORK_SUFFIX if network.get('elevation') else ''
+
+
+def access_distance(r):
+    """Walking access distance (m) configured for a study region."""
+    network = (r.config.get('network') if r is not None else None) or {}
+    return int(network.get('access_distance', DEFAULT_ACCESS_DISTANCE))
+
+
+def access_name(name, r=None, distance=None):
+    """Rewrite the default 400 m access distance in an indicator name/label.
+
+    This mirrors ghsci._access_distance_text.  It is duplicated here because
+    _utils is imported both as ``subprocesses._utils`` and as a bare
+    ``_utils`` module (from the subprocesses folder), contexts in which a
+    single unambiguous import of ghsci cannot be relied upon.
+    """
+    if distance is None:
+        distance = (
+            access_distance(r) if r is not None else DEFAULT_ACCESS_DISTANCE
+        )
+    distance = int(distance)
+    if distance == DEFAULT_ACCESS_DISTANCE or not isinstance(name, str):
+        return name
+    return (
+        name.replace(f'{DEFAULT_ACCESS_DISTANCE}m', f'{distance}m')
+        .replace(f'{DEFAULT_ACCESS_DISTANCE} m', f'{distance} m')
+        .replace(f'{DEFAULT_ACCESS_DISTANCE} metres', f'{distance} metres')
+        .replace(f'{DEFAULT_ACCESS_DISTANCE} meters', f'{distance} meters')
+    )
+
+
 def print_autobreak(*args, sep=' '):
 
     width = (
@@ -534,7 +573,9 @@ def generate_resources(  # noqa: C901
     else:
         r.access_profile(
             city_stats=city_stats,
-            title=phrases['Population % with access within 400m to...'],
+            title=phrases[
+                access_name('Population % with access within 400m to...', r)
+            ],
             cmap=cmap,
             phrases=phrases,
             path=file,
@@ -548,6 +589,8 @@ def generate_resources(  # noqa: C901
         phrases,
         locale,
         language,
+        access_distance_m=access_distance(r),
+        gentle_network=bool((r.config.get('network') or {}).get('elevation')),
     )
     ## constrain extreme outlying walkability for representation
     gdf_grid['all_cities_walkability'] = gdf_grid[
@@ -589,9 +632,13 @@ def generate_resources(  # noqa: C901
                     overlay = None
                 overlay_colour = spatial_maps[f].get(
                     'overlay_colour',
-                    '#8ECC3C',
+                    None,
                 )
                 overlay_alpha = spatial_maps[f].get('overlay_alpha', 0.8)
+                overlay_markersize = spatial_maps[f].get(
+                    'overlay_markersize',
+                    DEFAULT_POINT_OVERLAY_MARKERSIZE,
+                )
                 overlay_label = spatial_maps[f].get('overlay_phrase', None)
                 if overlay_label is not None:
                     overlay_label = phrases[overlay_label]
@@ -611,6 +658,7 @@ def generate_resources(  # noqa: C901
                     overlay_colour=overlay_colour,
                     overlay_label=overlay_label,
                     overlay_alpha=overlay_alpha,
+                    overlay_markersize=overlay_markersize,
                     basemap=basemap,
                 )
                 print(f"  {file.replace(config['region_dir'], '')}")
@@ -832,14 +880,22 @@ def compile_spatial_map_info(
     phrases,
     locale,
     language,
+    access_distance_m=None,
+    gentle_network=False,
 ):
     """
     Compile required information to produce spatial distribution figures.
 
     This is done using the information recorded in configuration/indicators.yml; specifically, indicators['report']['spatial_distribution_figures']
+
+    access_distance_m is the study region's configured walking access distance,
+    used to locate the correspondingly named indicator columns.  When
+    gentle_network is true, access captions note that the gentle access network
+    was used.
     """
     # effectively deep copy the supplied dictionary so its not mutable
     spatial_maps = json.loads(json.dumps(spatial_distribution_figures))
+    skipped = []
     for i in spatial_maps:
         spatial_maps[i]['label'] = spatial_maps[i]['label'].format(**phrases)
         spatial_maps[i]['outfile'] = spatial_maps[i]['outfile'].format(
@@ -849,27 +905,56 @@ def compile_spatial_map_info(
             spatial_maps[i]['tick_labels'] = [
                 x.format(**phrases) for x in spatial_maps[i]['tick_labels']
             ]
+        label_suffix = (
+            GENTLE_NETWORK_SUFFIX
+            if gentle_network and i.startswith('pct_access_')
+            else ''
+        )
         if i.startswith('pct_'):
+            population_column = f'pop_{i}'
+            if (
+                population_column not in gdf_city.columns
+                or gdf_city[population_column].isna().all()
+            ):
+                # Optional indicators are omitted rather than mapped as a
+                # blank or misleading figure
+                skipped.append(i)
+                continue
             city_summary_percent = _pct(
-                fnum(gdf_city[f'pop_{i}'].fillna(0)[0], '0.0', locale),
+                fnum(
+                    gdf_city[population_column].fillna(0)[0],
+                    '0.0',
+                    locale,
+                ),
                 locale,
             )
             label_phrase = phrases.get(spatial_maps[i]['label'])
             if label_phrase:
-                formatted_label = label_phrase.format(
-                    percent=city_summary_percent,
-                    **phrases,
+                formatted_label = (
+                    label_phrase.format(
+                        percent=city_summary_percent,
+                        **phrases,
+                    )
+                    + label_suffix
                 )
                 phrases[spatial_maps[i]['label']] = formatted_label
                 spatial_maps[i]['label'] = formatted_label
-    if gdf_city['pop_pct_access_400m_pt_gtfs_freq_20_score'][
-        0
-    ] is None or pd.isna(
-        gdf_city['pop_pct_access_400m_pt_gtfs_freq_20_score'][0],
-    ):
+            else:
+                spatial_maps[i]['label'] += label_suffix
+    for i in skipped:
+        spatial_maps.pop(i, None)
+    pt_freq_20 = access_name(
+        'pop_pct_access_400m_pt_gtfs_freq_20_score',
+        distance=access_distance_m,
+    )
+    pt_any = access_name(
+        'pop_pct_access_400m_pt_any_score',
+        distance=access_distance_m,
+    )
+    if gdf_city[pt_freq_20][0] is None or pd.isna(gdf_city[pt_freq_20][0]):
         city_summary_percent = _pct(
             fnum(
-                gdf_city['pop_pct_access_400m_pt_any_score'].fillna(0)[0],
+                gdf_city[pt_any].fillna(0)[0],
                 '0.0',
                 locale,
             ),
@@ -883,10 +968,17 @@ def compile_spatial_map_info(
             percent=city_summary_percent,
             **phrases,
         )
-        spatial_maps['pct_access_400m_pt_any_score'] = spatial_maps.pop(
-            'pct_access_400m_pt_gtfs_freq_20_score',
+        pt_any_figure = access_name(
+            'pct_access_400m_pt_any_score',
+            distance=access_distance_m,
         )
-        spatial_maps['pct_access_400m_pt_any_score']['label'] = phrases[
+        spatial_maps[pt_any_figure] = spatial_maps.pop(
+            access_name(
+                'pct_access_400m_pt_gtfs_freq_20_score',
+                distance=access_distance_m,
+            ),
+        )
+        spatial_maps[pt_any_figure]['label'] = phrases[
             'Percentage of population with access to public transport'
         ]
     return spatial_maps
@@ -995,10 +1087,19 @@ def add_localised_north_arrow(
     )
 
 
+# Point overlays (destinations and public transport stops) are drawn as small
+# sky blue dots, so that they remain legible without obscuring the underlying
+# accessibility surface and basemap.  Polygon overlays (for example public open
+# space) keep the original green fill.
+DEFAULT_POINT_OVERLAY_COLOUR = '#87CEEB'
+DEFAULT_POLYGON_OVERLAY_COLOUR = '#8ECC3C'
+DEFAULT_POINT_OVERLAY_MARKERSIZE = 1
+
+
 def add_plot_overlay(
     ax,
     overlay,
-    colour='#8ECC3C',
+    colour=None,
     alpha=0.6,
     label=None,
     legend_loc='lower center',
@@ -1009,18 +1110,38 @@ def add_plot_overlay(
     legend_handleheight=1,
     zorder=2,
     locale_profile=None,
+    markersize=None,
 ):
     """
     Plot overlay on ax and add a legend for it.
 
-    If a legend already exists, add as a secondary legend.
+    Point overlays are drawn in sky blue with a small marker size by default,
+    while polygon overlays retain the green fill.  If a legend already exists,
+    add as a secondary legend.
     """
-    overlay.plot(
-        ax=ax,
-        color=colour,
-        alpha=alpha,
-        zorder=zorder,
+    is_point = (
+        len(overlay) > 0
+        and overlay.geometry.geom_type.isin(['Point', 'MultiPoint']).all()
     )
+    if colour is None:
+        colour = (
+            DEFAULT_POINT_OVERLAY_COLOUR
+            if is_point
+            else DEFAULT_POLYGON_OVERLAY_COLOUR
+        )
+    plot_kwargs = {
+        'ax': ax,
+        'color': colour,
+        'alpha': alpha,
+        'zorder': zorder,
+    }
+    if is_point:
+        plot_kwargs['markersize'] = (
+            DEFAULT_POINT_OVERLAY_MARKERSIZE
+            if markersize is None
+            else markersize
+        )
+    overlay.plot(**plot_kwargs)
     if label is not None:
         legend_elements = [
             Patch(
@@ -1059,9 +1180,10 @@ def spatial_dist_map(
     locale='en',
     locale_profile=None,
     overlay=None,
-    overlay_colour='#8ECC3C',
+    overlay_colour=None,
     overlay_alpha=0.6,
     overlay_label=None,
+    overlay_markersize=DEFAULT_POINT_OVERLAY_MARKERSIZE,
     basemap='satellite',
 ):
     """Spatial distribution maps using geopandas geodataframe."""
@@ -1148,6 +1270,7 @@ def spatial_dist_map(
             alpha=overlay_alpha,
             label=overlay_label,
             locale_profile=locale_profile,
+            markersize=overlay_markersize,
         )
     # scalebar
     add_scalebar(
@@ -1569,8 +1692,12 @@ def ee_public_green_space_map(
         phrases = {'north arrow': 'N', 'km': 'km'}
 
     green_spaces = r.get_gdf('public_urban_green_space')
+    green_space_access_column = access_name(
+        'pct_access_400m_public_green_space_score',
+        r,
+    )
     accessibility = r.get_gdf(
-        f"SELECT pct_access_400m_public_green_space_score, geom FROM {r.config['grid_summary']}",
+        f"SELECT {green_space_access_column}, geom FROM {r.config['grid_summary']}",
     ).fillna('No Data')
     percentage = r.config['ee']['green_space_accessibility']['percent']
     pink_cmap = LinearSegmentedColormap.from_list(
@@ -1624,7 +1751,7 @@ def ee_public_green_space_map(
         ax.set_ylim(region_bounds[1] - y_buffer, region_bounds[3] + y_buffer)
     accessibility.plot(
         ax=ax,
-        column='pct_access_400m_public_green_space_score',
+        column=green_space_access_column,
         cmap=pink_cmap,
         vmin=0,
         vmax=100,
@@ -1670,7 +1797,7 @@ def ee_public_green_space_map(
         ],
     )
     cbar.set_label(
-        phrases['Access within 400m'],
+        phrases[access_name('Access within 400m', r)],
         size=textsize,
     )
     cbar.ax.tick_params(labelsize=textsize)
@@ -2717,6 +2844,79 @@ def _pdf_insert_cover_page(pdf, pages, phrases, r):
     return pdf
 
 
+def _citation_date(value):
+    """Format a YYYYMMDD configuration date for a report citation."""
+    import datetime
+
+    try:
+        return datetime.datetime.strptime(
+            str(int(float(value))),
+            '%Y%m%d',
+        ).strftime('%d %B %Y')
+    except (TypeError, ValueError):
+        return str(value) if value not in (None, '') else ''
+
+
+def _network_data_source_citations(r):
+    """Citation text for the elevation data and gentle access network."""
+    network = r.config.get('network') or {}
+    elevation = network.get('elevation') or {}
+    gentle = network.get('gentle_network') or {}
+    paragraphs = []
+    if elevation:
+        parts = []
+        source = elevation.get('source')
+        if source:
+            parts.append(str(source))
+        date = _citation_date(elevation.get('publication_date'))
+        if date:
+            parts.append(date)
+        citation = 'Elevation data: ' + ', '.join(parts) if parts else ''
+        if elevation.get('data'):
+            citation += (
+                f' ({os.path.basename(elevation["data"])})'
+                if citation
+                else ''
+            )
+        citation = citation.strip()
+        if citation:
+            citation += '.'
+        if elevation.get('url'):
+            citation += f"\n{elevation['url']}"
+        if citation:
+            paragraphs.append(citation)
+    if gentle:
+        grade = _gentle_grade_label(r, incline=True)
+        parts = []
+        source = gentle.get('source')
+        if source:
+            parts.append(str(source))
+        date = _citation_date(gentle.get('publication_date'))
+        if date:
+            parts.append(date)
+        citation = (
+            f'Gentle access network: walking routes with a maximum gradient '
+            f'of {grade}'
+        )
+        if parts:
+            citation += ', based on ' + ', '.join(parts)
+        citation += '.'
+        if gentle.get('url'):
+            citation += f"\n{gentle['url']}"
+        paragraphs.append(citation)
+    return '\n\n'.join(paragraphs)
+
+
+def _insert_after_paragraph(text, addition, after):
+    """Insert a paragraph into citation text after the named paragraph."""
+    paragraphs = text.split('\n\n')
+    for index, paragraph in enumerate(paragraphs):
+        if paragraph.lstrip().startswith(after):
+            paragraphs.insert(index + 1, addition)
+            return '\n\n'.join(paragraphs)
+    return f'{text}\n\n{addition}' if text else addition
+
+
 def _pdf_insert_citation_page(pdf, pages, phrases, r):
     """Add and render PDF report citation page."""
     import datetime
@@ -2764,6 +2964,13 @@ def _pdf_insert_citation_page(pdf, pages, phrases, r):
     else:
         translation = phrases.get('translation', '')
     edited = phrases.get('edited', '')
+    network_sources = _network_data_source_citations(r)
+    if network_sources:
+        template['citations'] = _insert_after_paragraph(
+            template['citations'],
+            network_sources,
+            'Urban features:',
+        )
     GHSCIC = f'Global Observatory of Healthy and Sustainable Cities {year}'
     end_matter = (
         f'{edited}\n\n{translation}\n\n{other_credits}\n\n{GHSCIC}'.format(
@@ -3101,6 +3308,325 @@ def _pdf_insert_open_space_policy_page(pdf, pages, phrases, r):
     return pdf
 
 
+# Health services included in the indicator, matching the tags configured in
+# process/configuration/osm_destination_definitions.csv.
+HEALTH_SERVICES_DESCRIPTION = (
+    'Health services include hospitals, medical centres and clinics, doctors '
+    'and general practitioners (GPs), dentists, pharmacies, and allied health '
+    'services such as physiotherapists and psychotherapists.'
+)
+
+# Pages which report access to each daily living destination category and to
+# combinations of two categories alongside their map, mapped to whether the
+# values should be taken from the safe walking network indicators.
+DAILY_LIVING_MATRIX_PAGES = {
+    'pct_access_400m_daily_living_all_score': False,
+    'pct_access_400m_safe_daily_living_all_score': True,
+}
+
+# Indicator pages whose description also reports the availability of the
+# footpath width data on which the safe walking network depends.
+SAFE_ACCESS_INDICATOR_KEYS = {
+    'pct_access_400m_pt_safe_freq_20_score',
+    'pct_access_400m_safe_daily_living_all_score',
+}
+
+
+def _safe_network_width_description(r):
+    """Describe how much of the network has recorded footpath width data.
+
+    The safe walking indicators traverse only links with a recorded width of
+    at least 1.5 m.  Where width is rarely mapped, the indicator is based on a
+    small and potentially unrepresentative part of the network, so report the
+    coverage alongside the results for the footway, path, pedestrian,
+    living_street and residential links from which the safe network is drawn.
+    """
+    cache_key = 'safe_network_width_summary'
+    if cache_key in r.config['pdf']:
+        summary = r.config['pdf'][cache_key]
+    else:
+        min_width = 1.5
+        predicate = (r.config.get('network') or {}).get(
+            'safe_walking_edges'
+        ) or ''
+        match = re.search(r'>=\s*([0-9]+(?:\.[0-9]+)?)', predicate)
+        if match:
+            min_width = float(match.group(1))
+        summary = None
+        try:
+            summary = r.get_df(
+                f"""
+                SELECT count(*) AS total,
+                       count(*) FILTER (
+                           WHERE width IS NOT NULL
+                             AND btrim(width::text)
+                                 NOT IN ('', 'nan', 'NULL')
+                       ) AS with_width,
+                       count(*) FILTER (
+                           WHERE COALESCE(
+                               NULLIF(
+                                   substring(
+                                       width::text from '[0-9]+[.]?[0-9]*'
+                                   ),
+                                   ''
+                               )::numeric,
+                               0
+                           ) >= {min_width}
+                       ) AS at_least_min_width
+                  FROM edges
+                 WHERE highway IN (
+                     'footway', 'path', 'pedestrian', 'living_street',
+                     'residential'
+                 )
+                """,
+            ).iloc[0]
+            summary = {
+                'total': int(summary['total']),
+                'with_width': int(summary['with_width']),
+                'at_least_min_width': int(summary['at_least_min_width']),
+                'min_width': min_width,
+            }
+        except Exception as error:
+            print(f'  Could not summarise footpath width coverage: {error}')
+        r.config['pdf'][cache_key] = summary
+    if not summary or summary['total'] == 0:
+        return ''
+    locale = r.config['pdf']['locale']
+    total = summary['total']
+    with_width = summary['with_width']
+    at_least = summary['at_least_min_width']
+    pct_with_width = 100 * with_width / total
+    pct_at_least = 100 * at_least / total
+    min_width = (
+        fnum(summary['min_width'], '0.0', locale)
+        .rstrip('0')
+        .rstrip(
+            '.',
+        )
+    )
+    return (
+        f'Of {fnum(total, "#,##0", locale)} eligible links, footpath width '
+        f'is recorded for {fnum(with_width, "#,##0", locale)} '
+        f'({fnum(pct_with_width, "0.0", locale)}%) and '
+        f'{fnum(at_least, "#,##0", locale)} '
+        f'({fnum(pct_at_least, "0.0", locale)}%) record at least '
+        f'{min_width} metre{"s" if float(min_width) != 1 else ""}.'
+    )
+
+
+def _gentle_grade_label(r, incline=False):
+    """Human-readable maximum gradient for gentle walking routes."""
+    elevation = (r.config.get('network') or {}).get('elevation') or {}
+    max_grade = float(elevation.get('max_grade', 1 / 12))
+    ratio = 1 / max_grade
+    if abs(ratio - round(ratio)) < 0.05:
+        ratio_text = f'1 in {round(ratio)}'
+    else:
+        ratio_text = f'1 in {ratio:.1f}'
+    suffix = ' incline' if incline else ''
+    return f'{ratio_text} ({100 * max_grade:.1f}%{suffix})'
+
+
+def _daily_living_matrix_values(r, safe=False):
+    """Population-weighted individual and pairwise destination access.
+
+    Returns a 3x3 matrix of percentages for fresh food markets, convenience
+    stores and public transport stops, where each cell is the percentage of
+    the population with access to both categories (the diagonal therefore
+    reports each category individually), together with the percentage with
+    access to all three.  Values are calculated from the sample points so that
+    combinations reflect the same people having access to both destinations,
+    rather than assuming independence between categories.
+    """
+    score_columns = (
+        [
+            'sp_access_safe_fresh_food_market_score',
+            'sp_access_safe_convenience_score',
+            'sp_access_safe_pt_any_score',
+        ]
+        if safe
+        else [
+            'sp_access_fresh_food_market_score',
+            'sp_access_convenience_score',
+            'sp_access_pt_any_score',
+        ]
+    )
+    columns = ['p.grid_id', 'g.pop_est'] + [
+        f'p.{column}' for column in score_columns
+    ]
+    try:
+        values = r.get_df(
+            f"""
+            SELECT {', '.join(columns)}
+              FROM {r.config['point_summary']} p
+              JOIN {r.config['grid_summary']} g ON p.grid_id = g.grid_id
+            """,
+        )
+    except Exception as error:
+        print(
+            '  Could not calculate destination combination matrix: '
+            f'{error}',
+        )
+        return None
+    if not set(score_columns).issubset(values.columns):
+        print(
+            '  Could not calculate destination combination matrix: '
+            'required access score columns are absent.',
+        )
+        return None
+    values = values.dropna(subset=['grid_id', 'pop_est'])
+    values = values[values['pop_est'] > 0].copy()
+    if values.empty:
+        return None
+    values['pop_est'] = pd.to_numeric(
+        values['pop_est'],
+        errors='coerce',
+    ).astype('float64')
+    values[score_columns] = (
+        values[score_columns]
+        .apply(pd.to_numeric, errors='coerce')
+        .astype('float64')
+    )
+    if values[score_columns].isna().all().any():
+        return None
+    values[score_columns] = values[score_columns].fillna(0)
+    sample_points_per_grid = values.groupby('grid_id')['grid_id'].transform(
+        'size',
+    )
+    values['weight'] = values['pop_est'] / sample_points_per_grid
+    total_weight = values['weight'].sum()
+    if total_weight <= 0:
+        return None
+    weights = values['weight'] / total_weight
+    matrix = [
+        [
+            float((weights * values[first] * values[second]).sum() * 100)
+            for second in score_columns
+        ]
+        for first in score_columns
+    ]
+    all_three = float(
+        (
+            weights
+            * values[score_columns[0]]
+            * values[score_columns[1]]
+            * values[score_columns[2]]
+        ).sum()
+        * 100,
+    )
+    return {'matrix': matrix, 'all_three': all_three}
+
+
+def _daily_living_matrix_figure(r, phrases, safe=False):
+    """Render the destination category and pair access matrix as an image."""
+    data = _daily_living_matrix_values(r, safe=safe)
+    if data is None:
+        return None
+    locale = r.config['pdf']['locale']
+    labels = ['Food market', 'Convenience', 'Public transport']
+    matrix = np.array(data['matrix'], dtype=float)
+    fig, ax = plt.subplots(figsize=(2.6, 2.8), dpi=300)
+    ax.imshow(matrix, cmap='Blues', vmin=0, vmax=100)
+    ax.set_xticks(range(len(labels)))
+    ax.set_yticks(range(len(labels)))
+    ax.set_xticklabels(
+        labels,
+        rotation=90,
+        ha='center',
+        va='top',
+        fontsize=6.5,
+    )
+    ax.set_yticklabels(labels, fontsize=6.5)
+    ax.tick_params(length=0)
+    for row in range(len(labels)):
+        for column in range(len(labels)):
+            value = matrix[row, column]
+            colour = 'white' if value >= 55 else '#1B2631'
+            ax.text(
+                column,
+                row,
+                f'{fnum(value, "0.0", locale)}%',
+                ha='center',
+                va='center',
+                fontsize=7.5,
+                color=colour,
+            )
+    title = (
+        'Safe access to destinations (%)'
+        if safe
+        else 'Access to destinations (%)'
+    )
+    if (r.config.get('network') or {}).get('elevation'):
+        title = title.replace(' (%)', ' via the gentle network (%)')
+    ax.set_title(
+        title,
+        fontsize=8,
+        pad=6,
+    )
+    fig.text(
+        0.5,
+        0.075,
+        'Each cell: access to both; diagonal: individual',
+        ha='center',
+        fontsize=5.8,
+    )
+    fig.text(
+        0.5,
+        0.02,
+        f'All three: {fnum(data["all_three"], "0.0", locale)}%',
+        ha='center',
+        fontsize=6.2,
+        fontweight='bold',
+    )
+    fig.subplots_adjust(
+        left=0.40,
+        right=0.98,
+        top=0.84,
+        bottom=0.40,
+    )
+    figure_path = (
+        f"{r.config['pdf']['figure_path']}/destination_access_matrix"
+        f"{'_safe' if safe else ''}_{r.config['pdf']['language']}.png"
+    )
+    fig.savefig(figure_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    return figure_path
+
+
+def _arrange_daily_living_matrix_page(elements, matrix_path):
+    """Place the destination matrix in the top right of a daily living page.
+
+    The matrix sits below the city title, and the description is narrowed to
+    half the page width so that it wraps beside the matrix rather than beneath
+    it.  The map keeps the full column width and starts below both.
+    """
+    map_element = None
+    for element in elements:
+        if element.get('name') == 'indicator_description':
+            element['x2'] = 105
+        elif element.get('name') == 'indicator_map':
+            element['y1'] = 80
+            element['keep_aspect_ratio'] = 1
+            map_element = element
+    if map_element is None:
+        return elements
+    matrix_element = dict(map_element)
+    matrix_element.update(
+        {
+            'name': 'daily_living_combination_matrix',
+            'type': 'I',
+            'x1': 136,
+            'y1': 15,
+            'x2': 196,
+            'y2': 78,
+            'keep_aspect_ratio': 1,
+            'text': matrix_path,
+        },
+    )
+    elements.append(matrix_element)
+    return elements
+
+
 # The age-friendly indicator pages, rendered one per page in this order.  Each
 # entry is (page, header, description, figure key, kind):
 #   'map'       a percentage access map from report.spatial_distribution_figures
@@ -3174,7 +3700,8 @@ AGE_FRIENDLY_INDICATOR_PAGES = [
         68,
         'Safe access to public transport service',
         'Safe network defined as OpenStreetMap footway, path, pedestrian, '
-        'living_street, residential AND width >= 1.5',
+        'living_street, residential, width >= 1.5 metres and gradient no '
+        'steeper than {gentle_grade}.',
         'pct_access_400m_pt_safe_freq_20_score',
         'map',
     ),
@@ -3182,7 +3709,9 @@ AGE_FRIENDLY_INDICATOR_PAGES = [
         69,
         'Safe access to daily living destinations',
         'Residential access within 400 m of daily living destinations (fresh '
-        'food, convenience store and public transport) using safe network',
+        'food, convenience store and public transport) using safe network '
+        '(footpath width >= 1.5 metres and gradient no steeper than '
+        '{gentle_grade}).',
         'pct_access_400m_safe_daily_living_all_score',
         'map',
     ),
@@ -3255,14 +3784,30 @@ def _indicator_label(r, phrases, key):
         )
     else:
         label = key
-    return phrases.get(label, label).replace('\n', ' ').replace('  ', ' ')
+    label = phrases.get(label, label).replace('\n', ' ').replace('  ', ' ')
+    network_suffix = _gentle_network_suffix(r)
+    if (
+        key.startswith('pct_access_')
+        and network_suffix
+        and network_suffix.strip() not in label
+    ):
+        label += network_suffix
+    return label
 
 
 def _pdf_insert_indicator_pages(pdf, pages, phrases, r):
     """Add and render one page per age-friendly indicator, in a fixed order."""
     if 'spatial' not in r.config['pdf']['report_template']:
         return pdf
+    safe_keys = {access_name(key, r) for key in SAFE_ACCESS_INDICATOR_KEYS}
+    daily_living_pages = {
+        access_name(key, r): safe
+        for key, safe in DAILY_LIVING_MATRIX_PAGES.items()
+    }
     for page, header, description, key, kind in AGE_FRIENDLY_INDICATOR_PAGES:
+        header = access_name(header, r)
+        description = access_name(description, r)
+        key = access_name(key, r)
         if f'{page}' not in pages:
             continue
         figure = _indicator_figure_path(r, key, kind)
@@ -3272,6 +3817,67 @@ def _pdf_insert_indicator_pages(pdf, pages, phrases, r):
                 'generated for this study region.',
             )
             continue
+        network_suffix = _gentle_network_suffix(r)
+        if key.startswith('pct_access_') and network_suffix:
+            description = (
+                f'{description.rstrip(". ")}{network_suffix}.'
+            )
+        if key == access_name(
+            'pct_access_400m_pt_transit_health_services_score',
+            r,
+        ):
+            description = f'{description} {HEALTH_SERVICES_DESCRIPTION}'
+        if key in safe_keys:
+            description = description.replace(
+                '{gentle_grade}',
+                _gentle_grade_label(r),
+            )
+            width_description = _safe_network_width_description(r)
+            if width_description:
+                description = (
+                    f'{description.rstrip(". ")}. {width_description}'
+                )
+        if kind == 'map':
+            for element in pages[f'{page}']:
+                if element.get('name') == 'indicator_map':
+                    element.update(
+                        {
+                            'x1': 10,
+                            'y1': 70,
+                            'x2': 200,
+                            'y2': 250,
+                            'keep_aspect_ratio': 1,
+                        },
+                    )
+        elif kind == 'accessibility':
+            for element in pages[f'{page}']:
+                if element.get('name') == (
+                    'Neighbourhood walkability relative to 25 cities '
+                    'internationally'
+                ):
+                    element['y1'] = 72
+                    element['y2'] = 78
+                elif element.get('name') == 'all_cities_walkability':
+                    element.update(
+                        {
+                            'x1': 10,
+                            'y1': 80,
+                            'x2': 200,
+                            'y2': 250,
+                            'keep_aspect_ratio': 1,
+                        },
+                    )
+        if key in daily_living_pages:
+            matrix_path = _daily_living_matrix_figure(
+                r,
+                phrases,
+                safe=daily_living_pages[key],
+            )
+            if matrix_path is not None:
+                _arrange_daily_living_matrix_page(
+                    pages[f'{page}'],
+                    matrix_path,
+                )
         template = FlexTemplate(pdf, elements=pages[f'{page}'])
         pdf.add_page()
         if 'indicator_header' in template:
@@ -3650,9 +4256,7 @@ def _pdf_add_spatial_accessibility_plots(template, r, phrases):
             f"{r.config['pdf']['figure_path']}/all_cities_walkability_{r.config['pdf']['language']}_no_label.jpg"
         )
     if 'walkability_above_median_pct' in template:
-        template['walkability_above_median_pct'] = phrases[
-            'walkability_above_median_pct'
-        ].format(
+        walkability_caption = phrases['walkability_above_median_pct'].format(
             percent=_pct(
                 fnum(
                     r.config['pdf']['indicators']['report']['walkability'][
@@ -3665,6 +4269,14 @@ def _pdf_add_spatial_accessibility_plots(template, r, phrases):
             ),
             city_name=phrases['city_name'],
         )
+        # The walkability page no longer refers to a boxed explanatory item.
+        walkability_caption = walkability_caption.replace(' (Box 1)', '')
+        walkability_caption = walkability_caption.replace('(Box 1)', '')
+        template['walkability_above_median_pct'] = walkability_caption.strip()
+    if 'population_caption' in template:
+        # The population data source is documented in the report's data
+        # attribution; the walkability page itself does not need this note.
+        template['population_caption'] = ''
     if 'access_profile' in template:
         # Access profile plot
         template['access_profile'] = (

@@ -120,6 +120,84 @@ class tests(unittest.TestCase):
         valid_example_configuration = validate(instance=example, schema=schema)
         self.assertTrue(valid_example_configuration is None)
 
+    def test_0_2a_access_distance(self):
+        """The configured access distance rewrites names, labels and phrases."""
+        import json
+
+        indicators = ghsci.load_yaml('./configuration/indicators.yml')
+        rewritten = ghsci.apply_access_distance(indicators, 300)
+        city_variables = rewritten['output']['city_variables']
+        self.assertIn(
+            'pop_pct_access_300m_fresh_food_market_score',
+            city_variables,
+        )
+        self.assertNotIn(
+            'pop_pct_access_400m_fresh_food_market_score',
+            city_variables,
+        )
+        self.assertIn(
+            'pct_access_300m_pt_any_score',
+            rewritten['report']['spatial_distribution_figures'],
+        )
+        # The default is preserved exactly
+        self.assertEqual(ghsci.apply_access_distance(indicators, 400), indicators)
+        # Report phrases are rewritten, except the evidence description
+        phrases = {
+            'Population % with access within 400m to...': '% within 400m',
+            'Access within 400m': 'Access within 400m',
+            'pos_description': 'Evidence for walking within 400 m',
+        }
+        rewritten_phrases = ghsci._apply_access_distance_phrases(phrases, 300)
+        self.assertIn(
+            'Population % with access within 300m to...',
+            rewritten_phrases,
+        )
+        self.assertEqual(
+            rewritten_phrases['Access within 300m'],
+            'Access within 300m',
+        )
+        self.assertEqual(
+            rewritten_phrases['pos_description'],
+            'Evidence for walking within 400 m',
+        )
+        # The parameter is accepted by the region configuration schema
+        with open('./configuration/regions/region-json-schema.json') as f:
+            schema = json.load(f)
+        self.assertIn(
+            'access_distance',
+            schema['properties']['network']['properties'],
+        )
+
+    def test_0_2b_gentle_gradient(self):
+        """Gradients are evaluated over a minimum window, not averaged away."""
+        import json
+
+        import numpy as np
+        from subprocesses._03a_derive_edge_gradients import (
+            _max_window_grade,
+        )
+
+        distance = np.arange(0, 65, 5, dtype='float64')
+        # A continuous 1-in-12 ramp
+        self.assertAlmostEqual(
+            _max_window_grade(distance, distance / 12, 10),
+            1 / 12,
+        )
+        # A short steep rise must be detected within a longer gentle edge
+        elevation = np.zeros_like(distance)
+        elevation[6:] = 2.0
+        self.assertAlmostEqual(
+            _max_window_grade(distance, elevation, 10),
+            0.2,
+        )
+        # The region configuration schema accepts elevation parameters
+        with open('./configuration/regions/region-json-schema.json') as f:
+            schema = json.load(f)
+        self.assertIn(
+            'elevation',
+            schema['properties']['network']['properties'],
+        )
+
     def test_0_3_configured_resolution(self):
         """Configured population resolutions are read as metric cell sizes."""
         from subprocesses.ghsci import _configured_resolution

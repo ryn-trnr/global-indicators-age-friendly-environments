@@ -1427,7 +1427,7 @@ REFERENCE_PATTERNS = {
         # Optional configurable pedestrian analysis (region 'accessibility'
         # block): the same destinations measured at every configured
         # distance band, with distances censored at the largest band rather
-        # than at the 400 m accessibility threshold.
+        # than at the configured walking access threshold.
         (
             'sp_walk_access_[destination]_[x]m',
             'Score (0/1): the destination is reachable within [x] m '

@@ -356,6 +356,11 @@
       "network": {
         "type": "object",
         "properties": {
+          "access_distance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Distance in metres within which access to destinations is evaluated for the accessibility indicators (default: 400).  Set a smaller distance, for example 300, to evaluate age-friendly access for older populations.  The configured distance is reflected in the indicator variable names and report labels."
+          },
           "intersection_tolerance": {
             "type": "integer",
             "description": "Tolerance in metres for cleaning intersections"
@@ -363,6 +368,69 @@
           "openstreetmap_query": {
             "type": "string",
             "description": "OSMnx custom filter query used to retrieve the routable network for this region from OpenStreetMap; if not provided, the project-wide query configured under 'network_analysis' in configuration/config.yml is used"
+          },
+          "elevation": {
+            "type": "object",
+            "description": "Digital elevation model used to derive walking-route gradients for the gentle access network.",
+            "properties": {
+              "data": {
+                "type": "string",
+                "description": "Path to a digital elevation model (DEM) raster relative to the project data directory, in the same projected coordinate reference system as the network.  Raster values are elevations in metres; a no-data value marks areas with unknown elevation."
+              },
+              "sample_interval": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Spacing in metres at which the elevation profile is sampled along each network edge (default: 5)."
+              },
+              "grade_window": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Minimum length in metres over which a gradient is evaluated, so that short DEM spikes and kerbs do not dominate the maximum (default: 10)."
+              },
+              "max_grade": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Maximum rise/run gradient for a link to be considered a gentle walking route.  The default of 1/12 (about 8.3%) follows the New Zealand outdoor ramp guidance of no more than 1 metre rise per 12 metres of length."
+              },
+              "min_coverage": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Minimum proportion of the sampled edge profile for which the DEM must provide valid elevations before the edge gradient is treated as known (default: 0.8)."
+              },
+              "source": {
+                "type": "string",
+                "description": "Source of the elevation data, for citation in the report."
+              },
+              "publication_date": {
+                "type": ["integer", "string"],
+                "description": "Publication or last-updated date of the elevation data (YYYYMMDD), for citation in the report."
+              },
+              "url": {
+                "type": "string",
+                "description": "URL for the elevation data source, for citation in the report."
+              }
+            },
+            "required": ["data"]
+          },
+          "gentle_network": {
+            "type": "object",
+            "description": "Source and citation details for the gentle walking network criterion.",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Source of the guidance on which the maximum walking gradient is based, for citation in the report."
+              },
+              "publication_date": {
+                "type": ["integer", "string"],
+                "description": "Publication date of the guidance (YYYYMMDD), for citation in the report."
+              },
+              "url": {
+                "type": "string",
+                "description": "URL for the guidance, for citation in the report."
+              }
+            },
+            "required": []
           }
         },
         "required": []

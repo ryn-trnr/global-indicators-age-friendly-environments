@@ -131,14 +131,16 @@ def calc_cities_pop_pct_indicators(r: ghsci.Region, indicators: dict) -> None:
     """Calculate population-weighted city-level indicators.
 
     These indicators include:
-        'pop_pct_access_400m_fresh_food_markets',
-        'pop_pct_access_400m_convenience',
-        'pop_pct_access_400m_pt_any',
-        'pop_pct_access_400m_public_open_space',
+        'pop_pct_access_[x]m_fresh_food_market_score',
+        'pop_pct_access_[x]m_convenience_score',
+        'pop_pct_access_[x]m_pt_any_score',
+        'pop_pct_access_[x]m_public_open_space_any_score',
         'pop_nh_pop_density',
         'pop_nh_intersection_density',
         'pop_daily_living',
         'pop_walkability'
+
+    where [x] is the configured walking access distance (default 400).
 
     Parameters
     ----------

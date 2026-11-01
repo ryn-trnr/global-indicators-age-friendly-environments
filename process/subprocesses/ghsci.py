@@ -11,6 +11,7 @@ r = ghsci.Region(codename)
 """
 
 import os
+import re
 import shutil
 import sys
 import time
@@ -125,6 +126,79 @@ def load_yaml(yml):
                 'For more details, see:\nhttps://github.com/healthysustainablecities/global-indicators/wiki/5.-Detailed-Setup#configuration\n\n',
             )
             return None
+
+
+DEFAULT_ACCESS_DISTANCE = 400
+
+
+def _access_distance_text(value, distance, default=DEFAULT_ACCESS_DISTANCE):
+    """Replace references to the default access distance in a string.
+
+    Indicator names and report labels have historically been written with the
+    400 m default baked in (e.g. ``pct_access_400m_pt_any_score``,
+    "within 400 m").  A study region may configure a different walking access
+    distance, in which case these references are rewritten to match it.  The
+    default of 400 m is returned unchanged, so existing names and labels are
+    preserved where no customisation applies.
+    """
+    if not isinstance(value, str) or distance is None:
+        return value
+    distance = int(distance)
+    if distance == default:
+        return value
+    return (
+        value.replace(f'{default}m', f'{distance}m')
+        .replace(f'{default} m', f'{distance} m')
+        .replace(f'{default} metres', f'{distance} metres')
+        .replace(f'{default} meters', f'{distance} meters')
+    )
+
+
+def apply_access_distance(value, distance):
+    """Recursively rewrite the default access distance in configuration values.
+
+    Used for the indicator definitions loaded from indicators.yml, whose
+    variable names, figure names and labels embed the default 400 m distance.
+    """
+    if isinstance(value, dict):
+        return {
+            apply_access_distance(key, distance): apply_access_distance(
+                val,
+                distance,
+            )
+            for key, val in value.items()
+        }
+    if isinstance(value, list):
+        return [apply_access_distance(v, distance) for v in value]
+    return _access_distance_text(value, distance)
+
+
+def _apply_access_distance_phrases(phrases, distance):
+    """Rewrite the access distance in report phrases and their keys.
+
+    Report phrases are supplied in the report configuration workbook with the
+    default 400 m distance written into the text (and, for a couple of chart
+    labels, into the phrase key itself).  The open space description is left
+    alone: the 400 m in it refers to published evidence about walking
+    distances rather than to this analysis' accessibility threshold.
+    """
+    if not isinstance(phrases, dict) or distance is None:
+        return phrases
+    distance = int(distance)
+    if distance == DEFAULT_ACCESS_DISTANCE:
+        return phrases
+    return {
+        (
+            key
+            if key in ('pos_description', 'locale')
+            else re.sub(r'(?<!\d)400(?!\d)', str(distance), key)
+        ): (
+            value
+            if key == 'pos_description' or not isinstance(value, str)
+            else re.sub(r'(?<!\d)400(?!\d)', str(distance), value)
+        )
+        for key, value in phrases.items()
+    }
 
 
 def load_yaml_with_template_defaults(file) -> dict:
@@ -1273,7 +1347,11 @@ class Region:
             if (self.config.get('gee') and os.environ.get('GHSCI_EE'))
             else 'indicators.yml'
         )
-        self.indicators = load_yaml(f'{config_path}/{_indicators_file}')
+        self.indicators = apply_access_distance(
+            load_yaml(f'{config_path}/{_indicators_file}'),
+            self.config['network']['access_distance'],
+        )
+        self.access_distance = self.config['network']['access_distance']
 
     def _check_required_configuration_parameters(
         self,
@@ -1712,6 +1790,51 @@ class Region:
             r['network'] = {'intersection_tolerance': 12}
         if 'intersection_tolerance' not in r['network']:
             r['network']['intersection_tolerance'] = 12
+        if 'access_distance' not in r['network'] or r['network'][
+            'access_distance'
+        ] in (None, ''):
+            # Fall back to the project-wide default for regions configured
+            # before this parameter was introduced
+            r['network']['access_distance'] = settings['network_analysis'][
+                'accessibility_distance'
+            ]
+        try:
+            r['network']['access_distance'] = int(
+                r['network']['access_distance'],
+            )
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"{self.codename}.yml error: 'network: access_distance' must "
+                'be an integer number of metres.',
+            )
+        if r['network']['access_distance'] <= 0:
+            raise ValueError(
+                f"{self.codename}.yml error: 'network: access_distance' must "
+                'be a positive number of metres.',
+            )
+        elevation = r['network'].get('elevation')
+        if isinstance(elevation, str):
+            elevation = {'data': elevation}
+        if elevation:
+            elevation = dict(elevation)
+            if not elevation.get('data'):
+                raise ValueError(
+                    f"{self.codename}.yml error: 'network: elevation' must "
+                    "define a 'data' path to a DEM raster.",
+                )
+            if not os.path.isabs(elevation['data']):
+                elevation['data'] = f"{data_path}/{elevation['data']}"
+            elevation.setdefault('sample_interval', 5)
+            elevation.setdefault('grade_window', 10)
+            elevation.setdefault('max_grade', 1 / 12)
+            elevation.setdefault('min_coverage', 0.8)
+            elevation['sample_interval'] = float(elevation['sample_interval'])
+            elevation['grade_window'] = float(elevation['grade_window'])
+            elevation['max_grade'] = float(elevation['max_grade'])
+            elevation['min_coverage'] = float(elevation['min_coverage'])
+            r['network']['elevation'] = elevation
+        else:
+            r['network']['elevation'] = None
         if 'osmnx_retain_all' not in r['network']:
             r['network']['osmnx_retain_all'] = False
         if r['network'].get('openstreetmap_query') is None:
@@ -3145,6 +3268,10 @@ class Region:
             phrases['filename_publication_check'] = (
                 f" ({phrases['DRAFT ONLY header warning']})"
             )
+        phrases = _apply_access_distance_phrases(
+            phrases,
+            self.config['network']['access_distance'],
+        )
         return phrases
 
     def get_city_stats(self, language='English', phrases=None):
@@ -3426,19 +3553,28 @@ class Region:
                 'region'
             ].loc[
                 0,
-                'pop_pct_access_400m_fresh_food_market_score',
+                _access_distance_text(
+                    'pop_pct_access_400m_fresh_food_market_score',
+                    self.access_distance,
+                ),
             ],
             'Population with access to regularly running formal public transport (<20 mins)': spatial_indicators[
                 'region'
             ].loc[
                 0,
-                'pop_pct_access_400m_pt_gtfs_freq_20_score',
+                _access_distance_text(
+                    'pop_pct_access_400m_pt_gtfs_freq_20_score',
+                    self.access_distance,
+                ),
             ],
             'Population with access to any public open space': spatial_indicators[
                 'region'
             ].loc[
                 0,
-                'pop_pct_access_400m_public_open_space_any_score',
+                _access_distance_text(
+                    'pop_pct_access_400m_public_open_space_any_score',
+                    self.access_distance,
+                ),
             ],
             'Population living in neighbourhoods above minimum density threshold for WHO physical activity target': spatial_indicators[
                 'report'
@@ -3566,7 +3702,12 @@ class Region:
         if city_stats is None:
             city_stats = self.get_city_stats(phrases=phrases)
         if title is None:
-            title = phrases['Population % with access within 400m to...']
+            title = phrases[
+                _access_distance_text(
+                    'Population % with access within 400m to...',
+                    self.access_distance,
+                )
+            ]
         if cmap is None:
             from subprocesses.batlow import batlow_map as cmap
         if path is None:

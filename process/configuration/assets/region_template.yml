@@ -301,6 +301,38 @@ OpenStreetMap:
   note:
 ## Network analysis related configuration parameters
 network:
+  ## Distance in metres within which access to destinations is evaluated for
+  ## the accessibility indicators.  The default is 400; for example, set 300
+  ## to evaluate access within a shorter walk for older populations.  The
+  ## configured distance is reflected in the indicator variable names and in
+  ## report labels.
+  access_distance: 400
+  ## Optional digital elevation model (DEM), used to derive the gradient of
+  ## walking routes for the gentle-access indicators.  Provide a raster in
+  ## the same projected coordinate reference system as the network, with
+  ## elevations in metres.  Edges whose gradient cannot be derived from the
+  ## DEM are treated as unknown and excluded from gentle routes.
+  # elevation:
+  #   ## Path to the DEM, relative to the project data directory
+  #   data: NZ/elevation/your_city_dem.tif
+  #   ## Spacing in metres at which the elevation profile is sampled
+  #   sample_interval: 5
+  #   ## Minimum length in metres over which a gradient is evaluated
+  #   grade_window: 10
+  #   ## Maximum gradient for a gentle walking route: 1/12 (about 8.3%),
+  #   ## following guidance that outdoor ramps rise no more than 1 m per 12 m
+  #   max_grade: 0.08333333333333333
+  #   ## Minimum valid DEM coverage before an edge gradient is considered known
+  #   min_coverage: 0.8
+  #   ## Citation details recorded in the report
+  #   source: Land Information New Zealand via LINZ Data Service
+  #   publication_date: 20260918
+  #   url: https://data.linz.govt.nz/layer/121859-new-zealand-lidar-1m-dem/
+  ## Citation details for the gentle walking network criterion (1 in 12)
+  # gentle_network:
+  #   source: New Zealand Government Disability Support Services
+  #   publication_date: 20241018
+  #   url: https://www.disabilitysupport.govt.nz/disabled-people/support-and-services/housing-and-transport/modifying-your-home/outdoor-ramps
   #########
   ## Optional network parameters for use in some contexts (eg. island cities)
   ## Whether to only retain main connected network when retrieving OSM roads.

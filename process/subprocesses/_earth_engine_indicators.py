@@ -587,7 +587,8 @@ def pugs_analysis(r):
 
     1. Identify PUGS overall greenery and store raster in PostgreSQL database
     2. Identify PUGS availability as a subset of areas of open space and store in PostgreSQL database
-    3. Perform network analysis to determine PUGS accessibility within 400m
+    3. Perform network analysis to determine PUGS accessibility within the
+       configured walking access distance
     4. Overlap population grid with accessible network service area to determine service area and store in PostgreSQL database
     """
     print(

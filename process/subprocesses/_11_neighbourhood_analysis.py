@@ -347,16 +347,16 @@ def calculate_poi_accessibility(r, engine=None):
     #    per the region's routing_engine setting) to calculate distance from nodes
     #    to nearest destinations (daily living destinations, public open space)
     # 2. calculate accessibiity score per sample point: transform accessibility
-    #    distance to binary measure: 1 if access <= 400m, 0 otherwise
+    #    distance to binary measure: 1 if access <= configured access distance, 0 otherwise
     # 3. calculate daily living score by summing the accessibiity scores to all
     #    POIs (excluding pos)
     # 4. calculate walkability score per sample point: get zscores for daily
     #    living accessibility, populaiton density and intersections population_density;
     #    sum these three zscores at sample point level
     print('\nCalculate accessibility to points of interest.')
-    accessibility_distance = ghsci.settings['network_analysis'][
-        'accessibility_distance'
-    ]
+    accessibility_distance = r.config['network']['access_distance']
+    print(f'  Access distance: {accessibility_distance} m')
+    access_network = _gentle_walking_predicate(r)
     if engine is None:
         engine = pedestrian_routing_engine(r)
     node_index = pd.Index(
@@ -384,10 +384,16 @@ def calculate_poi_accessibility(r, engine=None):
             _poi_column_plan(r),
             accessibility_distance,
             node_index,
+            where=access_network,
         )
     else:
         print('  Building destination-node travel cost lookup table...')
-        build_dest_node_lookup(r, active_layers, accessibility_distance)
+        build_dest_node_lookup(
+            r,
+            active_layers,
+            accessibility_distance,
+            where=access_network,
+        )
     distance_results = {}
     print('\nCalculating nearest node analyses ...')
     for analysis_key in r.indicators['nearest_node_analyses']:
@@ -445,7 +451,7 @@ def calculate_poi_accessibility(r, engine=None):
     nodes_poi_dist = nodes_poi_dist[
         [x for x in nodes_poi_dist.columns if x.startswith('sp_nearest_node_')]
     ]
-    # replace -999 values (meaning no destination reached in less than 400 metres) as nan
+    # replace -999 values (meaning no destination reached within the configured access distance) as nan
     nodes_poi_dist = (
         round(nodes_poi_dist, 0).replace(-999, np.nan).astype('Int64')
     )
@@ -688,6 +694,7 @@ def calculate_transit_destination_access(
         distance,
         node_index,
         engine,
+        edge_where=_gentle_walking_predicate(r),
     )
 
 
@@ -712,6 +719,62 @@ def calculate_transit_health_services_access(
     )
 
 
+def _gentle_walking_predicate(r):
+    """Condition restricting routing to links with a known gentle gradient.
+
+    Returns None when no elevation data is configured, or when the network has
+    no gradient attributes, in which case callers fall back to the full
+    pedestrian network.  Edges whose gradient could not be derived are
+    excluded, so only links known to meet the threshold can be used.
+    """
+    network = r.config.get('network') or {}
+    elevation = network.get('elevation')
+    if not elevation:
+        print(
+            '  Access network: no elevation data is configured; using the '
+            'full pedestrian network.',
+        )
+        return None
+    edge_columns = set(
+        r.get_df(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'edges'",
+        )['column_name'],
+    )
+    if 'grade_max_abs' not in edge_columns:
+        print(
+            '  Access network: network edges have no gradient attribute; '
+            'using the full pedestrian network.  Run the edge gradient step '
+            'to enable the gentle access network.',
+        )
+        return None
+    max_grade = float(elevation['max_grade'])
+    predicate = (
+        f'grade_max_abs IS NOT NULL AND grade_max_abs <= {max_grade:.12f}'
+    )
+    try:
+        links = r.get_df(
+            f'SELECT COUNT(*) AS n FROM edges WHERE {predicate}',
+        )['n'][0]
+        ratio = 1 / max_grade if max_grade else 0
+        ratio_text = (
+            f'1 in {round(ratio)}'
+            if abs(ratio - round(ratio)) < 0.05
+            else f'1 in {ratio:.1f}'
+        )
+        print(
+            f'  Access network: gentle ({ratio_text}; '
+            f'{int(links):,} links meet the threshold).',
+        )
+    except Exception as error:
+        print(
+            '  Access network: could not evaluate the gentle walking '
+            f'condition ({error}); using the full pedestrian network.',
+        )
+        return None
+    return predicate
+
+
 def _safe_walking_predicate(r):
     """Configured condition identifying low-stress walking links, or None when
     it cannot be evaluated for this study region (no network width attribute)."""
@@ -733,13 +796,16 @@ def _safe_walking_predicate(r):
                 'to retain OSM width tags.',
             )
             return None
+    gentle = _gentle_walking_predicate(r)
+    if gentle:
+        predicate = f'({predicate}) AND {gentle}'
     try:
         safe_links = r.get_df(
             f'SELECT COUNT(*) AS n FROM edges WHERE {predicate}',
         )['n'][0]
         print(
             f'  Safe walking network: {safe_links} low-stress links satisfy '
-            'the configured safe walking condition.',
+            'the configured safe walking and gentle-gradient conditions.',
         )
     except Exception as error:
         print(
@@ -1075,9 +1141,7 @@ def neighbourhood_analysis(codename):
         nodes,
         ghsci.settings['network_analysis']['neighbourhood_distance'],
     )
-    accessibility_distance = ghsci.settings['network_analysis'][
-        'accessibility_distance'
-    ]
+    accessibility_distance = r.config['network']['access_distance']
     routing_engine = pedestrian_routing_engine(r)
     nodes_poi_dist = calculate_poi_accessibility(r, engine=routing_engine)
     # Age-friendly public transport indicators, which re-use the walking
